@@ -26,6 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "lcd.h"
+#include "app_chassis.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -95,7 +96,12 @@ int main(void)
   /* USER CODE BEGIN 2 */
   /* 屏幕初始化（ST7789 2.00寸 320x240），并显示一行字 */
   LCD_Init();
-  LCD_ShowString(128, 112, "我是G473", GREEN, BLACK);
+  LCD_ShowString(128, 112, "我是G473-1", GREEN, BLACK);
+
+  /* 底盘初始化：CAN + 2×M2006/C610 + 速度环 */
+  App_Chassis_Init();
+  /* 最简运动示例：前进 0.2 m/s（改 0.0f 即停车，可用示波器/轮子验证方向） */
+  App_Chassis_SetVelocity(0.2f, 0.0f);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -105,6 +111,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    App_Chassis_Task();
   }
   /* USER CODE END 3 */
 }

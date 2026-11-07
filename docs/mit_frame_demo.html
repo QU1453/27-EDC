@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIT 帧解剖 · DM-S2325 数据交流演示</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* =====================================================================
+ * 全程用 CSS 变量统一配色：深色仪器底 + 琥珀/青色荧光
+ * 5 个字段各占一种颜色，从位域尺一直沿用到位元格、字节卡片
+ * ===================================================================== */
+:root{
+  --bg:#070809;
+  --bg-2:#0b0d0f;
+  --panel:rgba(255,255,255,.022);
+  --line:rgba(255,255,255,.085);
+  --line-2:rgba(255,255,255,.16);
+  --ink:#e9edea;
+  --dim:#8b958f;
+  --dim-2:#5d6661;
+  --amber:#ffb32c;
+  --cyan:#4de0c8;
+  --red:#ff5c5c;
+
+  --c-p:124,156,255;
+  --c-v:77,224,200;
+  --c-kp:255,179,44;
+  --c-kd:255,122,182;
+  --c-t:185,255,92;
+
+  --mono:'IBM Plex Mono','Cascadia Mono',Consolas,'Courier New',monospace;
+  --disp:'Chakra Petch','Bahnschrift SemiCondensed','DIN Alternate',var(--mono);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:
+    radial-gradient(1100px 560px at 18% -8%, rgba(77,224,200,.07), transparent 62%),
+    radial-gradient(900px 520px at 88% -4%, rgba(255,179,44,.06), transparent 58%),
+    var(--bg);
+  color:var(--ink);
+  font-family:var(--disp);
+  font-size:15px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+/* 网格底纹：撑出“仪器面板”的空间感 */
+body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.026) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.026) 1px,transparent 1px);
+  background-size:72px 72px;
+  mask-image:radial-gradient(ellipse at 50% 0%,#000 35%,transparent 82%);
+  -webkit-mask-image:radial-gradient(ellipse at 50% 0%,#000 35%,transparent 82%);
+}
+/* 颗粒噪点：避免大面积纯色发死 */
+.grain{
+  position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.28;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/></filter><rect width='180' height='180' filter='url(%23n)' opacity='.55'/></svg>");
+}
+/* 扫描线：CRT 味道 */
+.scan{
+  position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.5;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 4px);
+}
+.wrap{position:relative;z-index:2;max-width:1280px;margin:0 auto;padding:0 28px 120px}
+
+/* ---------------- 头部 ---------------- */
+header{padding:64px 0 40px;border-bottom:1px solid var(--line)}
+.eyebrow{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--dim);margin-bottom:26px;
+}
+.eyebrow .dot{
+  width:7px;height:7px;border-radius:50%;background:var(--cyan);
+  box-shadow:0 0 0 0 rgba(77,224,200,.6);animation:pulse 2s infinite;
+}
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(77,224,200,.55)}
+  70%{box-shadow:0 0 0 9px rgba(77,224,200,0)}
+  100%{box-shadow:0 0 0 0 rgba(77,224,200,0)}
+}
+.eyebrow .sep{color:var(--dim-2)}
+h1{
+  font-size:clamp(34px,6vw,68px);line-height:1.02;font-weight:700;
+  letter-spacing:-.015em;
+}
+h1 em{
+  font-style:normal;
+  color:transparent;
+  background:linear-gradient(100deg,var(--amber),#ffd98a 55%,var(--cyan));
+  -webkit-background-clip:text;background-clip:text;
+}
+.sub{
+  margin-top:22px;max-width:640px;color:var(--dim);font-size:15px;line-height:1.8;
+}
+.sub b{color:var(--ink);font-weight:600}
+.meta-row{
+  margin-top:34px;display:flex;flex-wrap:wrap;gap:10px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+}
+.chip{
+  border:1px solid var(--line);padding:7px 12px;border-radius:2px;color:var(--dim);
+  background:var(--panel);
+}
+.chip b{color:var(--amber);font-weight:600}
+
+/* ---------------- 场景通用 ---------------- */
+.scene{
+  padding:76px 0;border-bottom:1px solid var(--line);
+  opacity:0;transform:translateY(26px);
+  transition:opacity .9s cubic-bezier(.2,.7,.2,1),transform .9s cubic-bezier(.2,.7,.2,1);
+}
+.scene.in{opacity:1;transform:none}
+.scene-head{display:grid;grid-template-columns:52px 1fr;gap:22px;margin-bottom:34px}
+.scene-no{
+  font-family:var(--mono);font-size:12px;letter-spacing:.12em;color:var(--amber);
+  border:1px solid rgba(255,179,44,.32);border-radius:2px;height:26px;width:38px;
+  display:flex;align-items:center;justify-content:center;
+}
+h2{font-size:clamp(22px,2.4vw,30px);font-weight:600;letter-spacing:.005em;margin-bottom:10px}
+.lede{color:var(--dim);max-width:720px;font-size:14px;line-height:1.85}
+.lede code{
+  font-family:var(--mono);font-size:12.5px;color:var(--amber);
+  background:rgba(255,179,44,.09);padding:1px 5px;border-radius:2px;
+}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+
+.panel{
+  position:relative;border:1px solid var(--line);background:var(--panel);
+  padding:22px;border-radius:3px;
+}
+/* 面板四角的“定位角标” */
+.panel::before,.panel::after{
+  content:'';position:absolute;width:10px;height:10px;border:1px solid var(--line-2);pointer-events:none;
+}
+.panel::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.panel::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+.panel-title{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--dim-2);margin-bottom:18px;display:flex;justify-content:space-between;gap:10px;
+}
+
+/* ---------------- 滑杆 ---------------- */
+.slider{margin-bottom:20px}
+.slider:last-child{margin-bottom:0}
+.slider-head{
+  display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:9px;
+}
+.slider-name{font-family:var(--mono);font-size:12px;letter-spacing:.04em}
+.slider-name i{
+  display:inline-block;width:7px;height:7px;border-radius:1px;margin-right:8px;vertical-align:1px;
+}
+.slider-val{font-family:var(--mono);font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums}
+.slider-val small{color:var(--dim-2);font-size:10px;margin-left:3px}
+input[type=range]{
+  -webkit-appearance:none;appearance:none;width:100%;height:2px;background:var(--line-2);
+  border-radius:2px;outline:none;cursor:ew-resize;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:13px;height:13px;border-radius:1px;
+  background:var(--thumb,#fff);border:0;
+  box-shadow:0 0 0 3px rgba(0,0,0,.65),0 0 14px var(--thumb-glow,transparent);
+  transition:transform .15s ease;
+}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.25)}
+input[type=range]::-moz-range-thumb{
+  width:13px;height:13px;border-radius:1px;background:var(--thumb,#fff);border:0;
+}
+.slider-foot{
+  display:flex;justify-content:space-between;margin-top:7px;
+  font-family:var(--mono);font-size:10px;color:var(--dim-2);letter-spacing:.04em;
+}
+
+/* ---------------- 量化表 ---------------- */
+.quant{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+.quant th{
+  text-align:right;font-weight:400;font-size:10px;letter-spacing:.14em;color:var(--dim-2);
+  padding:0 0 10px;border-bottom:1px solid var(--line);text-transform:uppercase;
+}
+.quant th:first-child{text-align:left}
+.quant td{padding:11px 0;border-bottom:1px solid rgba(255,255,255,.045);text-align:right;font-variant-numeric:tabular-nums}
+.quant td:first-child{text-align:left;color:var(--dim)}
+.quant tr:last-child td{border-bottom:0}
+.quant .u{color:var(--amber)}
+.quant .b{color:var(--dim-2);font-size:11px}
+
+.formula{
+  margin-top:18px;padding:12px 14px;border-left:2px solid rgba(255,179,44,.5);
+  background:rgba(255,179,44,.05);font-family:var(--mono);font-size:11.5px;color:var(--dim);
+  line-height:1.9;overflow-x:auto;
+}
+.formula b{color:var(--amber);font-weight:500}
+
+/* ---------------- 位域尺 ---------------- */
+.ruler{position:relative;margin:14px 0 6px}
+.strip{position:relative;height:46px;margin-bottom:8px}
+.strip .fld{
+  position:absolute;top:0;height:46px;border-radius:2px;
+  background:rgba(var(--fc),.13);border:1px solid rgba(var(--fc),.45);
+  display:flex;flex-direction:column;justify-content:center;padding-left:10px;
+  overflow:hidden;transition:background .25s ease,box-shadow .25s ease;cursor:default;
+}
+.strip .fld b{
+  font-family:var(--mono);font-size:12px;font-weight:600;color:rgb(var(--fc));
+  letter-spacing:.02em;white-space:nowrap;
+}
+.strip .fld span{
+  font-family:var(--mono);font-size:10px;color:var(--dim-2);white-space:nowrap;
+}
+.strip .fld:hover{background:rgba(var(--fc),.26);box-shadow:0 0 22px rgba(var(--fc),.28)}
+
+.bits{display:flex;border:1px solid var(--line);border-radius:2px;overflow:hidden;background:#050607}
+.bgroup{flex:1 1 0;display:flex;border-right:1px solid var(--line)}
+.bgroup:last-child{border-right:0}
+.bit{
+  flex:1;height:38px;background:rgba(255,255,255,.028);
+  border-right:1px solid rgba(255,255,255,.045);
+  transition:background-color .22s ease,box-shadow .22s ease;
+  transition-delay:calc(var(--i) * 9ms);
+}
+.bit:last-child{border-right:0}
+.bit.lit[data-one="1"]{background:rgb(var(--fc));box-shadow:0 0 12px rgba(var(--fc),.5)}
+.bit.lit[data-one="0"]{background:rgba(var(--fc),.15)}
+.bit.hot{outline:1px solid rgba(var(--fc),.9);outline-offset:-1px}
+
+.blabels{display:flex;margin-top:8px}
+.blabels div{
+  flex:1 1 0;font-family:var(--mono);font-size:10px;color:var(--dim-2);
+  text-align:center;letter-spacing:.06em;
+}
+.blabels div b{display:block;color:var(--ink);font-size:12px;font-weight:500;font-variant-numeric:tabular-nums}
+
+.ruler-tools{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:20px;
+  padding-top:18px;border-top:1px solid var(--line);
+}
+button{
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink);background:transparent;border:1px solid var(--line-2);
+  padding:9px 16px;border-radius:2px;cursor:pointer;position:relative;overflow:hidden;
+  transition:color .2s ease,border-color .2s ease;
+}
+button::before{
+  content:'';position:absolute;inset:0;background:var(--amber);
+  transform:translateY(101%);transition:transform .28s cubic-bezier(.2,.7,.2,1);z-index:-1;
+}
+button:hover{color:#0a0b0c;border-color:var(--amber)}
+button:hover::before{transform:translateY(0)}
+.hint{font-family:var(--mono);font-size:10.5px;color:var(--dim-2);letter-spacing:.04em}
+
+/* ---------------- 字节卡 ---------------- */
+.bytes{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-top:6px}
+.bcard{
+  border:1px solid var(--line);border-radius:2px;background:rgba(255,255,255,.018);
+  padding:10px 8px 11px;transition:border-color .25s ease,background .25s ease,transform .25s ease;
+}
+.bcard:hover{border-color:var(--line-2);background:rgba(255,255,255,.05);transform:translateY(-2px)}
+.bcard .bi{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--dim-2);margin-bottom:6px;
+}
+.bcard .bv{
+  font-family:var(--mono);font-size:16px;font-weight:600;letter-spacing:-.01em;
+  font-variant-numeric:tabular-nums;
+}
+.bcard .brow{display:flex;gap:2px;margin:9px 0 8px}
+.bcard .brow i{flex:1;height:6px;border-radius:1px;background:rgba(255,255,255,.06)}
+.bcard .brow i[data-one="1"]{background:rgb(var(--fc));box-shadow:0 0 7px rgba(var(--fc),.5)}
+.bcard .brow i[data-one="0"]{background:rgba(var(--fc),.2)}
+.bcard .bsrc{
+  font-family:var(--mono);font-size:9px;line-height:1.5;color:var(--dim-2);
+  letter-spacing:.01em;word-break:break-word;
+}
+
+.code{
+  font-family:var(--mono);font-size:11.5px;line-height:2;color:var(--dim);
+  background:#050607;border:1px solid var(--line);border-radius:2px;
+  padding:16px 18px;overflow-x:auto;
+}
+.code .cmt{color:var(--dim-2)}
+.code .id{color:var(--cyan)}
+.code .num{color:var(--amber)}
+.code .row{display:block;white-space:pre;transition:color .2s ease}
+.code .row:hover{color:var(--ink)}
+
+/* ---------------- 总线动画 ---------------- */
+.bus{
+  display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;
+  padding:26px 18px;border:1px solid var(--line);border-radius:3px;background:rgba(255,255,255,.015);
+}
+.node{
+  text-align:center;border:1px solid var(--line-2);border-radius:2px;padding:14px 18px;
+  min-width:118px;background:rgba(0,0,0,.35);transition:border-color .3s ease,box-shadow .3s ease;
+}
+.node.hit{border-color:var(--amber);box-shadow:0 0 26px rgba(255,179,44,.25)}
+.node .nt{font-size:12.5px;font-weight:600;letter-spacing:.04em}
+.node .ns{font-family:var(--mono);font-size:9.5px;color:var(--dim-2);letter-spacing:.1em;margin-top:5px}
+.lane{position:relative;height:72px;min-width:0}
+.lane .rail{
+  position:absolute;left:0;right:0;top:50%;height:1px;
+  background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.22),rgba(255,255,255,.06));
+}
+.lane .rail::after{
+  content:'';position:absolute;inset:-3px 0 auto;height:7px;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.1) 0 1px,transparent 1px 22px);
+}
+.tok{
+  position:absolute;top:50%;left:0;translate:0 -50%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:7px 12px;border-radius:2px;white-space:nowrap;will-change:transform;
+  border:1px solid;backdrop-filter:blur(2px);
+}
+.tok b{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.06em}
+.tok span{font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;opacity:.7;margin-top:2px}
+.tok.out{color:var(--amber);border-color:rgba(255,179,44,.55);background:rgba(255,179,44,.12)}
+.tok.in{color:var(--cyan);border-color:rgba(77,224,200,.55);background:rgba(77,224,200,.12)}
+
+.bus-bar{
+  display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
+  margin-top:18px;font-family:var(--mono);font-size:11px;color:var(--dim-2);letter-spacing:.06em;
+}
+.tick-num{color:var(--amber);font-variant-numeric:tabular-nums;font-size:13px}
+
+/* ---------------- 反馈解码 ---------------- */
+.fb-bytes{display:grid;grid-template-columns:repeat(8,1fr);gap:7px;margin-bottom:20px}
+.fb-bytes div{
+  border:1px solid var(--line);border-radius:2px;padding:8px 4px;text-align:center;
+  background:rgba(77,224,200,.04);
+}
+.fb-bytes div i{display:block;font-family:var(--mono);font-size:9px;color:var(--dim-2);font-style:normal;margin-bottom:4px}
+.fb-bytes div b{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--cyan);font-variant-numeric:tabular-nums}
+
+.nibbles{display:grid;gap:12px;margin-bottom:18px}
+.nib{
+  border:1px solid var(--line);border-left:2px solid rgba(77,224,200,.5);
+  padding:11px 14px;border-radius:2px;background:rgba(255,255,255,.015);
+}
+.nib .nl{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--dim-2);margin-bottom:9px}
+.nib .ns{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;flex-wrap:wrap}
+.nib .half{
+  flex:1 1 46%;display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+  padding:6px 10px;border-radius:2px;background:rgba(255,179,44,.09);
+  border:1px solid rgba(255,179,44,.2);
+}
+.nib .half b{color:var(--amber);font-weight:600;font-size:12px}
+.nib .half span{color:var(--dim);font-size:10px}
+
+.decoded{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line)}
+.decoded div{background:#08090b;padding:12px 14px}
+.decoded dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--dim-2);margin-bottom:5px}
+.decoded dd{
+  font-family:var(--mono);font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;
+  color:var(--ink);
+}
+.decoded dd small{font-size:10px;color:var(--dim-2);margin-left:3px;font-weight:400}
+
+/* ---------------- 页脚说明 ---------------- */
+.foot{padding-top:70px}
+.law{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:26px;
+}
+.law div{border:1px solid var(--line);padding:20px;border-radius:3px;background:var(--panel)}
+.law h3{font-size:14px;font-weight:600;margin-bottom:9px;color:var(--ink)}
+.law p{font-size:13px;color:var(--dim);line-height:1.85}
+.law code{font-family:var(--mono);font-size:11.5px;color:var(--amber)}
+.law em{font-style:normal;color:var(--cyan)}
+
+table.cmds{width:100%;border-collapse:collapse;margin-top:18px;font-family:var(--mono);font-size:11.5px}
+table.cmds th{
+  text-align:left;font-weight:400;font-size:9.5px;letter-spacing:.14em;color:var(--dim-2);
+  padding-bottom:9px;border-bottom:1px solid var(--line);text-transform:uppercase;
+}
+table.cmds td{padding:9px 0;border-bottom:1px solid rgba(255,255,255,.04);color:var(--dim)}
+table.cmds td:first-child{color:var(--ink)}
+table.cmds td:nth-child(2){color:var(--amber)}
+
+@media (max-width:960px){
+  .grid-2{grid-template-columns:1fr}
+  .bytes{grid-template-columns:repeat(4,1fr)}
+  .bus{grid-template-columns:1fr;gap:26px}
+  .lane{height:56px}
+  .decoded{grid-template-columns:1fr}
+}
+@media (max-width:560px){
+  .wrap{padding:0 16px 80px}
+  .bytes{grid-template-columns:repeat(2,1fr)}
+  .scene-head{grid-template-columns:1fr;gap:14px}
+  .strip .fld span{display:none}
+  .fb-bytes{grid-template-columns:repeat(4,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="grain"></div>
+<div class="scan"></div>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">
+      <span class="dot"></span>
+      <span>CAN 1 Mbps</span><span class="sep">/</span>
+      <span>标准帧 8 字节</span><span class="sep">/</span>
+      <span>周期 5 ms</span>
+    </div>
+    <h1>MIT 帧<em>解剖</em><br>8 个字节怎么说话</h1>
+    <p class="sub">
+      达妙 <b>DM-S2325-1EC</b> 的 MIT 模式，一帧只有 8 个字节，却要塞进
+      <b>位置、速度、Kp、Kd、前馈力矩</b> 五个量。下面用四幕动画，把
+      <b>量化 → 拼位 → 打包 → 一问一答</b> 一次看完。
+    </p>
+    <div class="meta-row">
+      <span class="chip">电机 <b>DM-S2325-1EC</b></span>
+      <span class="chip">额定 <b>1.35 N·m</b> / 峰值 <b>5 N·m</b></span>
+      <span class="chip">控制帧 ID <b>0x001</b></span>
+      <span class="chip">反馈帧 ID <b>0x011</b></span>
+      <span class="chip">关键 <b>Kp=0 &amp; Kd≠0 → 内部速度环</b></span>
+    </div>
+  </header>
+
+  <!-- ============ 01 量化 ============ -->
+  <section class="scene" id="s1">
+    <div class="scene-head">
+      <div class="scene-no">01</div>
+      <div>
+        <h2>量化 · 物理值先变成整数</h2>
+        <p class="lede">
+          总线只能传整数。所以每个物理量都先按自己的量程映射成定点数：
+          位置和力矩是 <code>16/12 位</code>，速度 12 位，Kp、Kd 也是 12 位。
+          下面的滑杆就是主控里的 <code>BSP_Motor_SetSpeed()</code>，
+          拖一下，右边立刻算出真正要发出去的整数。
+        </p>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-title"><span>输入 · 物理量</span><span id="src-tag">拖动试试</span></div>
+        <div id="sliders"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title"><span>输出 · 定点整数</span><span>float → uint</span></div>
+        <table class="quant">
+          <thead>
+            <tr><th>字段</th><th>物理值</th><th>位宽</th><th>整数</th></tr>
+          </thead>
+          <tbody id="quantBody"></tbody>
+        </table>
+        <div class="formula">
+          <b>u = (x − x_min) × (2ⁿ − 1) / (x_max − x_min)</b><br>
+          超量程直接截断到端点，<span style="color:var(--dim-2)">bsp_motor.c · float_to_uint()</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 02 位域 ============ -->
+  <section class="scene" id="s2">
+    <div class="scene-head">
+      <div class="scene-no">02</div>
+      <div>
+        <h2>拼位 · 64 位怎么切</h2>
+        <p class="lede">
+          5 个量首尾相接，正好拼满 64 位：<code>16 + 12 + 12 + 12 + 12 = 64</code>。
+          每个格子是一位，亮的是 1，暗的是 0；颜色代表它属于哪个字段。
+          注意 <b>速度、Kp、Kd、力矩</b> 的 12 位都会跨过字节边界 —— 这正是打包时最容易写错的地方。
+        </p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title"><span>位域尺 · MSB ← → LSB</span><span id="bitSummary">64 bit</span></div>
+
+      <div class="ruler">
+        <div class="strip" id="strip"></div>
+        <div class="bits" id="bitRuler"></div>
+        <div class="blabels" id="byteLabels"></div>
+      </div>
+
+      <div class="ruler-tools">
+        <button id="replay">▶ 重放装填动画</button>
+        <span class="hint">竖线 = 字节边界（每 8 位一个字节）</span>
+        <span class="hint" style="margin-left:auto">悬停字段块可高亮它的位</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 03 打包 ============ -->
+  <section class="scene" id="s3">
+    <div class="scene-head">
+      <div class="scene-no">03</div>
+      <div>
+        <h2>打包 · 8 个字节的真实顺序</h2>
+        <p class="lede">
+          把上面那条 64 位尺从左往右、每 8 位切一刀，就是 <code>buf[0]</code> 到 <code>buf[7]</code>。
+          颜色条显示每个字节里装的是谁的位 —— <b>B3 和 B6 是拼接字节</b>，高低半字节来自不同字段。
+        </p>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:22px">
+      <div class="panel-title"><span>发送帧 · 8 字节</span><span id="frameIdTag">CAN ID = 0x001</span></div>
+      <div class="bytes" id="byteCards"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title"><span>bsp_motor.c 里的实际打包顺序</span><span>数值实时刷新</span></div>
+      <div class="code" id="packCode"></div>
+    </div>
+  </section>
+
+  <!-- ============ 04 一问一答 ============ -->
+  <section class="scene" id="s4">
+    <div class="scene-head">
+      <div class="scene-no">04</div>
+      <div>
+        <h2>一问一答 · 发一帧才回一帧</h2>
+        <p class="lede">
+          MIT 是 <b>query-based</b>：主控发一帧控制，驱动器才回一帧反馈；不发就没有反馈。
+          所以 200 Hz 的控制周期，也就是 200 Hz 的反馈频率。反馈帧用的是
+          <code>Master ID</code>（左 0x11 / 右 0x12），跟控制帧的 ID 不是同一个。
+        </p>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:22px">
+      <div class="panel-title"><span>总线</span><span id="playState">已暂停</span></div>
+
+      <div class="bus">
+        <div class="node" id="nodeA">
+          <div class="nt">主控</div>
+          <div class="ns">STM32G473</div>
+        </div>
+        <div class="lane" id="lane">
+          <div class="rail"></div>
+        </div>
+        <div class="node" id="nodeB">
+          <div class="nt">左驱动器</div>
+          <div class="ns">DM-S2325 · ID 1</div>
+        </div>
+      </div>
+
+      <div class="bus-bar">
+        <span>周期 <span class="tick-num">5</span> ms · 帧号 <span class="tick-num" id="tickNum">0000</span></span>
+        <span>动画已放慢 ≈ 180×，只为看清顺序</span>
+        <button id="togglePlay">▶ 开始播放</button>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-title"><span>反馈帧 · 原始字节</span><span>CAN ID = 0x011</span></div>
+        <div class="fb-bytes" id="fbBytes"></div>
+
+        <div class="nibbles">
+          <div class="nib">
+            <div class="nl">data[0] · 高 4 位 ERR ｜ 低 4 位 ID</div>
+            <div class="ns">
+              <div class="half"><b id="errVal">0x1</b><span>ERR · 1 = 已使能</span></div>
+              <div class="half"><b id="idVal">0x1</b><span>ID · 电机编号</span></div>
+            </div>
+          </div>
+          <div class="nib">
+            <div class="nl">data[4] · 高 4 位 VEL[3:0] ｜ 低 4 位 TOR[11:8]</div>
+            <div class="ns">
+              <div class="half"><b id="velNib">0x0</b><span>速度最低 4 位</span></div>
+              <div class="half"><b id="torNib">0x0</b><span>力矩最高 4 位</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title"><span>解码结果</span><span>uint → float</span></div>
+        <dl class="decoded">
+          <div><dt>位置 POS</dt><dd id="dPos">0.000<small>rad</small></dd></div>
+          <div><dt>速度 VEL</dt><dd id="dVel">0.0<small>rad/s</small></dd></div>
+          <div><dt>转子转速</dt><dd id="dRpm">0.0<small>rpm</small></dd></div>
+          <div><dt>力矩 TOR</dt><dd id="dTor">0.000<small>N·m</small></dd></div>
+          <div><dt>MOS 温度</dt><dd id="dMos">31<small>℃</small></dd></div>
+          <div><dt>绕组温度</dt><dd id="dRot">33<small>℃</small></dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 页脚 ============ -->
+  <footer class="foot">
+    <div class="scene-head">
+      <div class="scene-no">附</div>
+      <div>
+        <h2>三条必须记住的规则</h2>
+        <p class="lede">协议之外，这三条最容易在实车上翻车。</p>
+      </div>
+    </div>
+
+    <div class="law">
+      <div>
+        <h3>① Kp = 0、Kd ≠ 0，主控别再套 PID</h3>
+        <p>
+          驱动器内部算的是
+          <code>t = Kp·(p_des − p) + Kd·(v_des − v) + t_ff</code>。
+          把 Kp 置 0，只剩 <code>Kd·(v_des − v)</code>，它本身就是一个速度 P 环。
+          主控只要送目标转速，<em>再套一层速度 PID 会变成双闭环打架</em>。
+        </p>
+      </div>
+      <div>
+        <h3>② 两个 ID 不是同一个</h3>
+        <p>
+          控制帧 ID = 电机 ID（左 <code>1</code> / 右 <code>2</code>）；
+          反馈帧 ID = <code>Master ID</code>（左 <code>0x11</code> / 右 <code>0x12</code>）。
+          出厂 Master ID 是 0，必须用达妙上位机改，否则总线上一片 0。
+        </p>
+      </div>
+      <div>
+        <h3>③ 一机一帧，不能合并</h3>
+        <p>
+          每帧只对一台电机说话，两台车就是两帧、两个 ID。
+          反馈也是各回各的，靠 <code>data[0]</code> 低 4 位的 ID 区分是谁在说话。
+        </p>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:22px">
+      <div class="panel-title"><span>特殊命令帧 · 前 7 字节全 0xFF，D7 放命令码</span></div>
+      <table class="cmds">
+        <thead><tr><th>命令</th><th>D7</th><th>作用</th></tr></thead>
+        <tbody>
+          <tr><td>ENABLE</td><td>0xFC</td><td>使能电机，之后反馈里 ERR 会变成 1</td></tr>
+          <tr><td>DISABLE</td><td>0xFD</td><td>失能，电机卸力</td></tr>
+          <tr><td>SET_ZERO</td><td>0xFE</td><td>把当前位置设为零点</td></tr>
+          <tr><td>CLEAR_ERR</td><td>0xFB</td><td>清故障</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+/* =====================================================================
+ * 数据模型：
+ *   所有常量照抄 bsp_motor.h，打包顺序照抄 bsp_motor.c 的 send_mit_frame
+ * ===================================================================== */
+const FIELDS = [
+  { key:'p',  name:'p_des',  label:'位置',     unit:'rad',   bits:16, min:-12.5, max:12.5, start:0,  rgb:'124,156,255', step:0.01, init:0.00 },
+  { key:'v',  name:'v_des',  label:'速度',     unit:'rad/s', bits:12, min:-30,   max:30,   start:16, rgb:'77,224,200',  step:0.01, init:6.67 },
+  { key:'kp', name:'Kp',     label:'刚度',     unit:'',      bits:12, min:0,     max:500,  start:28, rgb:'255,179,44',  step:1,    init:0    },
+  { key:'kd', name:'Kd',     label:'阻尼',     unit:'',      bits:12, min:0,     max:5,    start:40, rgb:'255,122,182', step:0.01, init:0.30 },
+  { key:'t',  name:'t_ff',   label:'前馈力矩', unit:'N·m',   bits:12, min:-5,    max:5,    start:52, rgb:'185,255,92',  step:0.01, init:0.00 }
+];
+
+const CFG = {
+  P_MAX:12.5, V_MAX:30.0, T_MAX:5.0,
+  KP_MIN:0, KP_MAX:500, KD_MIN:0, KD_MAX:5,
+  PERIOD_MS:5, LEFT_ID:1, LEFT_MASTER:0x11
+};
+
+const q = {};
+FIELDS.forEach(f => q[f.key] = f.init);
+
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+/* 物理值 → 定点整数；超量程截断 */
+function toUint(x, min, max, bits){
+  const span = (1 << bits) - 1;
+  let u = Math.round((x - min) * span / (max - min));
+  if (u < 0) u = 0;
+  if (u > span) u = span;
+  return u;
+}
+/* 定点整数 → 物理值 */
+function toFloat(u, min, max, bits){
+  return u * (max - min) / ((1 << bits) - 1) + min;
+}
+const hex = (n, w = 2) => n.toString(16).toUpperCase().padStart(w, '0');
+const bin = (n, w) => n.toString(2).padStart(w, '0');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ---------------- 01 · 滑杆 ---------------- */
+function buildSliders(){
+  const box = $('#sliders');
+  FIELDS.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'slider';
+    row.style.setProperty('--thumb', `rgb(${f.rgb})`);
+    row.innerHTML = `
+      <div class="slider-head">
+        <span class="slider-name"><i style="background:rgb(${f.rgb})"></i>${f.name}</span>
+        <span class="slider-val" id="val-${f.key}"></span>
+      </div>
+      <input type="range" id="sl-${f.key}" min="${f.min}" max="${f.max}" step="${f.step}" value="${f.init}">
+      <div class="slider-foot">
+        <span>${f.min}</span>
+        <span>量程 ${f.min} ~ ${f.max} · ${f.bits} bit</span>
+        <span>${f.max}</span>
+      </div>`;
+    box.appendChild(row);
+    const input = row.querySelector('input');
+    input.addEventListener('input', () => {
+      q[f.key] = parseFloat(input.value);
+      render();
+    });
+  });
+}
+
+/* ---------------- 02 · 位域尺 ---------------- */
+function buildRuler(){
+  const strip = $('#strip');
+  FIELDS.forEach(f => {
+    const d = document.createElement('div');
+    d.className = 'fld';
+    d.style.setProperty('--fc', f.rgb);
+    d.style.left = (f.start / 64 * 100) + '%';
+    d.style.width = (f.bits / 64 * 100) + '%';
+    d.innerHTML = `<b>${f.name}</b><span>${f.bits} bit</span>`;
+    d.addEventListener('mouseenter', () => $$(`.bit[data-field="${f.key}"]`).forEach(c => c.classList.add('hot')));
+    d.addEventListener('mouseleave', () => $$(`.bit[data-field="${f.key}"]`).forEach(c => c.classList.remove('hot')));
+    strip.appendChild(d);
+  });
+
+  const ruler = $('#bitRuler');
+  for (let b = 0; b < 8; b++){
+    const g = document.createElement('div');
+    g.className = 'bgroup';
+    for (let p = 0; p < 8; p++){
+      const idx = b * 8 + p;
+      const f = FIELDS.find(x => idx >= x.start && idx < x.start + x.bits);
+      const bit = document.createElement('i');
+      bit.className = 'bit';
+      bit.dataset.field = f.key;
+      bit.dataset.byte = b;
+      bit.dataset.one = '0';
+      bit.style.setProperty('--fc', f.rgb);
+      bit.style.setProperty('--i', idx);
+      g.appendChild(bit);
+    }
+    ruler.appendChild(g);
+  }
+
+  const labels = $('#byteLabels');
+  for (let b = 0; b < 8; b++){
+    const d = document.createElement('div');
+    d.innerHTML = `B${b}<b id="bl-${b}">00</b>`;
+    labels.appendChild(d);
+  }
+}
+
+/* ---------------- 03 · 字节卡 ---------------- */
+const BYTE_DESC = [
+  'p_des[15:8]',
+  'p_des[7:0]',
+  'v_des[11:4]',
+  'v_des[3:0] | Kp[11:8]',
+  'Kp[7:0]',
+  'Kd[11:4]',
+  'Kd[3:0] | t_ff[11:8]',
+  't_ff[7:0]'
+];
+
+function buildBytes(){
+  const box = $('#byteCards');
+  for (let b = 0; b < 8; b++){
+    const card = document.createElement('div');
+    card.className = 'bcard';
+    let row = '';
+    for (let p = 0; p < 8; p++){
+      const idx = b * 8 + p;
+      const f = FIELDS.find(x => idx >= x.start && idx < x.start + x.bits);
+      row += `<i data-one="0" data-bit="${idx}" style="--fc:${f.rgb}"></i>`;
+    }
+    card.innerHTML = `
+      <div class="bi">B${b}</div>
+      <div class="bv" id="bv-${b}">0x00</div>
+      <div class="brow">${row}</div>
+      <div class="bsrc">${BYTE_DESC[b]}</div>`;
+    box.appendChild(card);
+  }
+}
+
+/* ---------------- 核心渲染 ---------------- */
+const state = { u:{}, bytes:new Uint8Array(8), bits:new Array(64).fill(0) };
+
+function render(){
+  /* 1. 量化 */
+  FIELDS.forEach(f => {
+    state.u[f.key] = toUint(q[f.key], f.min, f.max, f.bits);
+    const v = document.getElementById('val-' + f.key);
+    const digits = f.bits === 16 ? 3 : 2;
+    v.innerHTML = q[f.key].toFixed(digits) + `<small>${f.unit}</small>`;
+  });
+
+  /* 2. 位序列（流顺序：p 的最高位在最前） */
+  FIELDS.forEach(f => {
+    const u = state.u[f.key];
+    for (let o = 0; o < f.bits; o++){
+      state.bits[f.start + o] = (u >> (f.bits - 1 - o)) & 1;
+    }
+  });
+
+  /* 3. 位域尺点亮 */
+  $$('.bit').forEach((c, i) => {
+    c.dataset.one = String(state.bits[i]);
+    c.classList.add('lit');
+  });
+
+  /* 4. 打包成 8 字节（严格照 send_mit_frame） */
+  const { p, v, kp, kd, t } = state.u;
+  const b = state.bytes;
+  b[0] = (p >> 8) & 0xFF;
+  b[1] = p & 0xFF;
+  b[2] = (v >> 4) & 0xFF;
+  b[3] = (((v & 0x0F) << 4) | ((kp >> 8) & 0x0F)) & 0xFF;
+  b[4] = kp & 0xFF;
+  b[5] = (kd >> 4) & 0xFF;
+  b[6] = (((kd & 0x0F) << 4) | ((t >> 8) & 0x0F)) & 0xFF;
+  b[7] = t & 0xFF;
+
+  for (let i = 0; i < 8; i++){
+    const el = document.getElementById('bv-' + i);
+    if (el) el.textContent = '0x' + hex(b[i]);
+    const bl = document.getElementById('bl-' + i);
+    if (bl) bl.textContent = hex(b[i]);
+  }
+  $$('.bcard .brow i').forEach(i => {
+    i.dataset.one = String(state.bits[+i.dataset.bit]);
+  });
+
+  /* 5. 量化表 */
+  const tbody = $('#quantBody');
+  tbody.innerHTML = FIELDS.map(f => {
+    const u = state.u[f.key];
+    const digits = f.bits === 16 ? 3 : 2;
+    return `<tr>
+      <td style="color:rgb(${f.rgb})">${f.name}</td>
+      <td>${q[f.key].toFixed(digits)}</td>
+      <td class="b">${f.bits} bit</td>
+      <td class="u">${u} <span class="b">/ ${(1 << f.bits) - 1}</span></td>
+    </tr>`;
+  }).join('');
+
+  /* 6. 代码块实时数值 */
+  const code = $('#packCode');
+  code.innerHTML = [
+    ['buf[0] = p  >> 8',                '= 0x' + hex(b[0]), '位置高 8 位'],
+    ['buf[1] = p  &amp; 0xFF',          '= 0x' + hex(b[1]), '位置低 8 位'],
+    ['buf[2] = v  >> 4',                '= 0x' + hex(b[2]), '速度高 8 位'],
+    ['buf[3] = ((v &amp; 0x0F) &lt;&lt; 4) | ((kp &gt;&gt; 8) &amp; 0x0F)', '= 0x' + hex(b[3]), '速度低 4 位 + Kp 高 4 位'],
+    ['buf[4] = kp &amp; 0xFF',          '= 0x' + hex(b[4]), 'Kp 低 8 位'],
+    ['buf[5] = kd >> 4',                '= 0x' + hex(b[5]), 'Kd 高 8 位'],
+    ['buf[6] = ((kd &amp; 0x0F) &lt;&lt; 4) | ((t &gt;&gt; 8) &amp; 0x0F)', '= 0x' + hex(b[6]), 'Kd 低 4 位 + 力矩高 4 位'],
+    ['buf[7] = t  &amp; 0xFF',          '= 0x' + hex(b[7]), '力矩低 8 位']
+  ].map(([l, r, note]) =>
+    `<span class="row"><span class="id">${l}</span>  <span class="num">${r}</span>  <span class="cmt">// ${note}</span></span>`
+  ).join('');
+
+  /* 7. 位域尺顶端的摘要 */
+  $('#bitSummary').textContent = `64 bit · p ${state.u.p} · v ${state.u.v} · Kp ${state.u.kp} · Kd ${state.u.kd} · t ${state.u.t}`;
+}
+
+/* 装填动画：按位顺序依次点亮 */
+function playFill(){
+  const cells = $$('.bit');
+  cells.forEach(c => c.classList.remove('lit'));
+  void document.getElementById('bitRuler').offsetWidth;
+  cells.forEach(c => c.classList.add('lit'));
+}
+
+/* ---------------- 04 · 电机仿真 + 反馈解码 ---------------- */
+const sim = {
+  pos:0, vel:0, tor:0,
+  tmos:31, trot:33,
+  err:1, id:CFG.LEFT_ID,
+  rawPos:0, rawVel:0, rawTor:0
+};
+
+function stepSim(){
+  const target = q.v;
+  sim.vel += (target - sim.vel) * 0.24;
+  if (Math.abs(target - sim.vel) < 0.03) sim.vel = target;
+  sim.tor = Math.max(-CFG.T_MAX, Math.min(CFG.T_MAX, q.kd * (target - sim.vel) + q.t));
+  sim.pos += sim.vel * (CFG.PERIOD_MS / 1000);
+  if (sim.pos > CFG.P_MAX) sim.pos = CFG.P_MAX;
+  if (sim.pos < -CFG.P_MAX) sim.pos = -CFG.P_MAX;
+  sim.tmos = Math.min(46, sim.tmos + Math.abs(sim.vel) * 0.0022);
+  sim.trot = Math.min(52, sim.trot + Math.abs(sim.vel) * 0.0031);
+}
+
+function feedbackBytes(){
+  sim.rawPos = toUint(sim.pos, -CFG.P_MAX, CFG.P_MAX, 16);
+  sim.rawVel = toUint(sim.vel, -CFG.V_MAX, CFG.V_MAX, 12);
+  sim.rawTor = toUint(sim.tor, -CFG.T_MAX, CFG.T_MAX, 12);
+  const d = new Uint8Array(8);
+  d[0] = ((sim.err & 0x0F) << 4) | (sim.id & 0x0F);
+  d[1] = (sim.rawPos >> 8) & 0xFF;
+  d[2] = sim.rawPos & 0xFF;
+  d[3] = (sim.rawVel >> 4) & 0xFF;
+  d[4] = (((sim.rawVel & 0x0F) << 4) | ((sim.rawTor >> 8) & 0x0F)) & 0xFF;
+  d[5] = sim.rawTor & 0xFF;
+  d[6] = Math.round(sim.tmos) & 0xFF;
+  d[7] = Math.round(sim.trot) & 0xFF;
+  return d;
+}
+
+function renderFeedback(){
+  const d = feedbackBytes();
+
+  const box = $('#fbBytes');
+  box.innerHTML = Array.from(d).map((x, i) =>
+    `<div><i>D${i}</i><b>${hex(x)}</b></div>`
+  ).join('');
+
+  $('#errVal').textContent = '0x' + hex(d[0] >> 4, 1);
+  $('#idVal').textContent  = '0x' + hex(d[0] & 0x0F, 1);
+  $('#velNib').textContent = '0x' + hex((d[4] >> 4) & 0x0F, 1);
+  $('#torNib').textContent = '0x' + hex(d[4] & 0x0F, 1);
+
+  const rawPos = (d[1] << 8) | d[2];
+  const rawVel = (d[3] << 4) | (d[4] >> 4);
+  const rawTor = ((d[4] & 0x0F) << 8) | d[5];
+
+  const pos = toFloat(rawPos, -CFG.P_MAX, CFG.P_MAX, 16);
+  const vel = toFloat(rawVel, -CFG.V_MAX, CFG.V_MAX, 12);
+  const tor = toFloat(rawTor, -CFG.T_MAX, CFG.T_MAX, 12);
+
+  $('#dPos').innerHTML = pos.toFixed(3) + '<small>rad</small>';
+  $('#dVel').innerHTML = vel.toFixed(2) + '<small>rad/s</small>';
+  $('#dRpm').innerHTML = (vel * 60 / (2 * Math.PI)).toFixed(1) + '<small>rpm</small>';
+  $('#dTor').innerHTML = tor.toFixed(3) + '<small>N·m</small>';
+  $('#dMos').innerHTML = d[6] + '<small>℃</small>';
+  $('#dRot').innerHTML = d[7] + '<small>℃</small>';
+}
+
+/* ---------------- 04 · 帧飞行动画 ---------------- */
+const lane = $('#lane');
+
+function flyFrame(dir, title, sub, cls){
+  const tok = document.createElement('div');
+  tok.className = 'tok ' + cls;
+  tok.innerHTML = `<b>${title}</b><span>${sub}</span>`;
+  lane.appendChild(tok);
+
+  const span = lane.clientWidth - tok.offsetWidth;
+  const from = dir === 'out' ? -tok.offsetWidth : span;
+  const to   = dir === 'out' ? span : -tok.offsetWidth;
+
+  const anim = tok.animate([
+    { transform:`translateX(${from}px)`, opacity:0 },
+    { opacity:1, offset:.10 },
+    { opacity:1, offset:.88 },
+    { transform:`translateX(${to}px)`, opacity:0 }
+  ], { duration:820, easing:'cubic-bezier(.45,0,.25,1)', fill:'forwards' });
+
+  anim.onfinish = () => tok.remove();
+}
+
+function hit(node){
+  node.classList.add('hit');
+  setTimeout(() => node.classList.remove('hit'), 380);
+}
+
+/* ---------------- 播放循环 ---------------- */
+let playing = false;
+let tickCount = 0;
+
+async function cycle(){
+  tickCount++;
+  $('#tickNum').textContent = String(tickCount).padStart(4, '0');
+
+  flyFrame('out', 'ID 0x' + hex(CFG.LEFT_ID, 3), 'MIT · 8 B', 'out');
+  hit($('#nodeA'));
+  await sleep(380);
+
+  stepSim();
+  renderFeedback();
+
+  flyFrame('in', 'ID 0x' + hex(CFG.LEFT_MASTER, 3), 'FEEDBACK · 8 B', 'in');
+  hit($('#nodeB'));
+  await sleep(620);
+}
+
+async function loop(){
+  while (playing){
+    await cycle();
+    if (!playing) break;
+    await sleep(220);
+  }
+}
+
+$('#togglePlay').addEventListener('click', () => {
+  playing = !playing;
+  $('#togglePlay').textContent = playing ? '⏸ 暂停' : '▶ 开始播放';
+  $('#playState').textContent = playing ? '● 运行中' : '已暂停';
+  $('#playState').style.color = playing ? 'var(--cyan)' : '';
+  if (playing) loop();
+});
+
+/* ---------------- 初始化 ---------------- */
+buildSliders();
+buildRuler();
+buildBytes();
+render();
+renderFeedback();
+playFill();
+
+$('#replay').addEventListener('click', playFill);
+
+/* 滚动进场 */
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting){
+      e.target.classList.add('in');
+      io.unobserve(e.target);
+    }
+  });
+}, { threshold:.12 });
+$$('.scene').forEach(s => io.observe(s));
+
+/* 窗口变窄时，正在飞行的帧会错位，直接清掉 */
+window.addEventListener('resize', () => $$('.tok').forEach(t => t.remove()));
+</script>
+</body>
+</html>

@@ -5,6 +5,24 @@
 #include "main.h"
 #include "spi.h"
 
+/* =====================================================================
+ * lcd_port.h —— 屏幕端口层（Hardware 层，最贴近硬件的一层）
+ *
+ * 文件作用：
+ *   把「拉某个引脚、往 SPI2 发几个字节」封装成 LCD_xxx 函数。
+ *   上层（lcd.c）只调这些函数，完全不认识 GPIO / SPI 的名字，
+ *   换板子时只改这一个文件和它的 .c，上层一行都不用动。
+ *
+ * 命名对照：
+ *   Port = 端口（引脚 + 外设的搬运层）  Init = 初始化
+ *   Delay = 毫秒延时         Rst = Reset 复位        Bl = BackLight 背光
+ *   Cs = Chip Select 片选    Dc = Data/Command 数据/命令选择
+ *   WriteCmd = 写命令        WriteData = 写 1 字节数据
+ *   WriteDataHalfWord = 写 2 字节数据（半字）  WriteDataBulk = 批量写数据
+ *   cmd = 命令字节           data = 数据字节         buf/len = 缓冲/长度
+ *   level = 电平（1 高 / 0 低）   ms = 毫秒
+ * ===================================================================== */
+
 /* ============================ 屏幕接口 ============================
  *  屏上没有排针，只有一根 16pin / 0.5mm 间距的 FFC 软排线，
  *  插在板上的 FPC1 = FPC-05F-16PH20 座子上（17/18 脚为屏蔽/地，非信号）。
@@ -44,18 +62,34 @@
 #define LCD_DC_GPIO_Port    GPIOB
 #endif
 
-/* 端口层：只做“引脚 + SPI”的搬运，不关心屏幕型号 */
+/* 作用：端口初始化。片选拉低、DC 置高，为后续发命令做准备。 */
 void LCD_PortInit(void);
+
+/* 作用：毫秒级延时。初始化时序要用，内部就是 HAL_Delay。 */
 void LCD_Delay(uint32_t ms);
 
+/* 作用：设置复位脚电平。 */
 void LCD_RstPin(uint8_t level);
+
+/* 作用：设置背光脚电平（1 = 点亮）。 */
 void LCD_BlPin(uint8_t level);
+
+/* 作用：设置片选脚电平（本工程常低）。 */
 void LCD_CsPin(uint8_t level);
+
+/* 作用：设置 DC 脚电平（0 = 接下来是命令，1 = 接下来是数据）。 */
 void LCD_DcPin(uint8_t level);
 
+/* 作用：写一个命令字节（DC=0 + SPI 发 1 字节）。 */
 void LCD_WriteCmd(uint8_t cmd);
+
+/* 作用：写一个数据字节（DC=1 + SPI 发 1 字节）。 */
 void LCD_WriteData(uint8_t data);
+
+/* 作用：写一个半字（坐标/颜色），内部先交换高低字节，屏幕要求高字节在前。 */
 void LCD_WriteDataHalfWord(uint16_t data);
+
+/* 作用：批量写数据。调用前 buf 里的字节顺序必须已经是「高字节在前」。 */
 void LCD_WriteDataBulk(const uint8_t *buf, uint32_t len);
 
 #endif

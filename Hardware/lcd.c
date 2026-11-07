@@ -3,13 +3,32 @@
 #include "lcd_port.h"
 #include "lcd_font.h"
 
+/* =====================================================================
+ * lcd.c —— ST7789 屏幕驱动（Hardware 层，绘图的真正实现）
+ *
+ * 文件作用：
+ *   实现 lcd.h 里声明的所有绘图 API：初始化、画点/线/矩形、显示字符和汉字。
+ *   只调用 lcd_port 的引脚/SPI 函数，不直接碰 GPIO 和 SPI 寄存器。
+ *
+ * 命名对照：
+ *   MADCTL = Memory Access Control 扫描方向寄存器
+ *   cmd = command 命令      dat = data 数据      len = length 长度
+ *   set_window = 设置显示窗口（0x2A 列 / 0x2B 行 / 0x2C 写显存）
+ *   config = 配置（初始化序列）
+ *   s_line_buf = 整行缓冲   w/h = width/height 宽/高
+ *   dx/dy = 差值   sx/sy = 步进方向   err/e2 = Bresenham 误差项
+ *   ch = character 字符     str = 字符串     cp = Unicode 码点
+ *   row/col = 行/列         mask = 位掩码     data = 当前字节的点阵
+ *   fc/bc = 前景色/背景色   p = 点阵指针
+ * ===================================================================== */
+
 /* 2.00 寸 ST7789 的 MADCTL：0xA0 = 横向（320x240），颜色正常 */
 #define LCD_MADCTL 0xA0
 
 /* 整行缓冲，用于快速填充（1 行 = 320 像素 = 640 字节） */
 static uint16_t s_line_buf[LCD_W];
 
-/* 写命令 + 若干数据字节 */
+/* 作用：写一条命令 + 可选的若干数据字节（dat 为 NULL 时只发命令）。 */
 static void lcd_cmd(uint8_t cmd, const uint8_t *dat, uint16_t len)
 {
     LCD_WriteCmd(cmd);
@@ -18,7 +37,7 @@ static void lcd_cmd(uint8_t cmd, const uint8_t *dat, uint16_t len)
     }
 }
 
-/* 设置显示窗口（含写显存命令 0x2C） */
+/* 作用：设置显示窗口（含写显存命令 0x2C），此后连续写入都落在这个矩形内。 */
 static void lcd_set_window(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
 {
     LCD_WriteCmd(0x2A);
@@ -30,7 +49,7 @@ static void lcd_set_window(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
     LCD_WriteCmd(0x2C);
 }
 
-/* ST7789 初始化序列（2.00 寸，参数取自厂家例程） */
+/* 作用：下发 ST7789 初始化序列（2.00 寸，参数取自厂家例程）。 */
 static void lcd_config(void)
 {
     static const uint8_t porch[]   = { 0x0C, 0x0C, 0x00, 0x33, 0x33 };
@@ -80,6 +99,7 @@ static void lcd_config(void)
     lcd_cmd(0x29, NULL, 0);                       /* Display On */
 }
 
+/* 作用：屏幕初始化。引脚就绪 → 硬件复位 → 开背光 → 下发初始化序列 → 清黑。 */
 void LCD_Init(void)
 {
     LCD_PortInit();
@@ -99,11 +119,13 @@ void LCD_Init(void)
     LCD_Clear(BLACK);
 }
 
+/* 作用：整屏填充一种颜色。 */
 void LCD_Clear(uint16_t color)
 {
     LCD_Fill(0, 0, LCD_W - 1, LCD_H - 1, color);
 }
 
+/* 作用：画一个像素点。越界直接丢弃，不做裁剪换算。 */
 void LCD_DrawPoint(uint16_t x, uint16_t y, uint16_t color)
 {
     if ((x >= LCD_W) || (y >= LCD_H)) {
@@ -113,6 +135,7 @@ void LCD_DrawPoint(uint16_t x, uint16_t y, uint16_t color)
     LCD_WriteDataHalfWord(color);
 }
 
+/* 作用：填实心矩形。先把颜色按行填进整行缓冲，再一行一次批量发，速度远快于逐点。 */
 void LCD_Fill(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
 {
     uint16_t w, h, i, j;
@@ -142,6 +165,7 @@ void LCD_Fill(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color
     }
 }
 
+/* 作用：画任意方向直线，Bresenham 整数算法（只用加减和比较，无浮点无乘法）。 */
 void LCD_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
 {
     int dx, dy, sx, sy, err, e2;
@@ -171,6 +195,7 @@ void LCD_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t c
     }
 }
 
+/* 作用：画空心矩形，四条边各调一次画线。 */
 void LCD_DrawRectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
 {
     LCD_DrawLine(x1, y1, x2, y1, color);
@@ -179,6 +204,7 @@ void LCD_DrawRectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint1
     LCD_DrawLine(x2, y1, x2, y2, color);
 }
 
+/* 作用：显示一个 8x16 ASCII 字符。不可打印字符当空格；越界直接跳过。 */
 void LCD_ShowChar(uint16_t x, uint16_t y, char ch, uint16_t fc, uint16_t bc)
 {
     const unsigned char *p;
@@ -206,6 +232,7 @@ void LCD_ShowChar(uint16_t x, uint16_t y, char ch, uint16_t fc, uint16_t bc)
     }
 }
 
+/* 作用：显示一个 16x16 汉字。按 Unicode 码点查表，查不到就跳过。 */
 void LCD_ShowChinese(uint16_t x, uint16_t y, uint16_t code, uint16_t fc, uint16_t bc)
 {
     const unsigned char *p = NULL;
@@ -237,7 +264,8 @@ void LCD_ShowChinese(uint16_t x, uint16_t y, uint16_t code, uint16_t fc, uint16_
     }
 }
 
-/* 取下一个 UTF-8 字符的码点，指针前移 */
+/* 作用：从 UTF-8 串里取出下一个字符的码点，并把指针前移相应字节数。
+ *       只支持 1~3 字节序列（BMP 内的汉字够用），非法首字节返回 '?'。 */
 static uint16_t lcd_utf8_next(const uint8_t **pp)
 {
     const uint8_t *p = *pp;
@@ -260,6 +288,7 @@ static uint16_t lcd_utf8_next(const uint8_t **pp)
     return cp;
 }
 
+/* 作用：显示 UTF-8 字符串，ASCII 走 8x16 字库、汉字走 16x16 字库；超右边界自动换行。 */
 void LCD_ShowString(uint16_t x, uint16_t y, const char *str, uint16_t fc, uint16_t bc)
 {
     const uint8_t *p = (const uint8_t *)str;

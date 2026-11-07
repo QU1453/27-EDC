@@ -2,6 +2,8 @@
 MDK-ARM/build/
 MDK-ARM/car_dipan/
 MDK-ARM/build_log.txt
+MDK-ARM/build.log
+MDK-ARM/flash_build.log
 
 # EIDE 索引与 CMSIS 包缓存（体积大，插件会自动重建）
 MDK-ARM/.cmsis/

@@ -62,6 +62,20 @@ virtualFolder:
         - path: ../Hardware/lcd_port.c
         - path: ../Hardware/lcd_font.c
       folders: []
+    - name: BSP
+      files:
+        - path: ../BSP/bsp_can.c
+        - path: ../BSP/bsp_motor.c
+      folders: []
+    - name: Algorithm
+      files:
+        - path: ../Algorithm/algo_kinematics.c
+        - path: ../Algorithm/algo_pid.c
+      folders: []
+    - name: App
+      files:
+        - path: ../App/app_chassis.c
+      folders: []
 dependenceList: []
 outDir: build
 miscInfo:
@@ -74,6 +88,9 @@ targets:
         - STM32G473xx
       incList:
         - ../Core/Inc
+        - ../App
+        - ../BSP
+        - ../Algorithm
         - ../Hardware
         - ../Drivers/STM32G4xx_HAL_Driver/Inc
         - ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy
