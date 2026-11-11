@@ -1,0 +1,7 @@
+id: race_vision
+name: Race Vision
+name[zh]: 电赛视觉
+version: 1.0.0
+author: ""
+desc: Traditional CV target tracking over UART
+desc[zh]: 传统视觉找色块，通过串口输出目标坐标

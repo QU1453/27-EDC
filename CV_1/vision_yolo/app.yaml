@@ -1,0 +1,7 @@
+id: race_vision_yolo
+name: Race Vision YOLO
+name[zh]: 电赛视觉YOLO
+version: 1.0.0
+author: ""
+desc: YOLO object detection and UART target output
+desc[zh]: YOLO 目标检测，通过串口输出目标坐标
