@@ -25,6 +25,11 @@
 - 坐标基准改为模型输入尺寸（如 640x640），中心为 W/2,H/2；协议仍为 `cx,cy,area\n`。
 - 模型文件需放在设备 `/root/models/`，路径由 `MODEL_PATH` 指定。
 
+## 2026-11-11 仓库升级为整个电赛工程
+- 远端仓库更名为 `27-EDC`；git 根目录上移到 `27电赛/`，原路径整体变为 `Car_Chassis/...`（`car_dipan.ioc` 与远端最新 blob 一致，未改动）。
+- 新增根 `.gitignore`：排除 `.cache/`、`__pycache__/`、`*.pyc`。
+- 推送 `main`，并新建并推送 `QU1453`、`Juneee` 两个分支。
+
 ## 2026-11-06 vision 性能优化
 - 采集加 `fps=60, buff_num=3`；新增第二路 320x240 通道做识别，省 resize。
 - 新增 `PREVIEW`、`PREVIEW_EVERY`；关闭预览时不再读 720P 主通道。
