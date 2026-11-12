@@ -93,6 +93,11 @@ int main(void)
   MX_USART1_UART_Init();
   MX_SPI2_Init();
   MX_FDCAN1_Init();
+  MX_FDCAN2_Init();
+  MX_UART4_Init();
+  MX_UART5_Init();
+  MX_USART2_UART_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   /* 屏幕初始化（ST7789 2.00寸 320x240），并显示一行字 */
   LCD_Init();

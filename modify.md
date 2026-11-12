@@ -1,5 +1,12 @@
 # 修改记录
 
+## 2026-11-13 合并本地 CubeMX 外设配置到 Car_Chassis
+- 来源：本地分支 `backup/local-20261113`（桌面 car 工程），已适配远端新目录 `Car_Chassis/`。
+- `Core/Inc`、`Core/Src`（fdcan / usart / gpio / stm32g4xx_it）：新增 FDCAN2、USART2、USART3、UART4、UART5 的初始化与中断。
+- `car_dipan.ioc`：同步上述外设与引脚配置。
+- `main.c`：增加 5 个 Init 调用，保留底盘 App 初始化。
+- 未改动 `MDK-ARM/`，保留远端 EIDE/Keil 工程配置。
+
 ## 2026-11-06 新建视觉工程骨架
 - 新增 `CV_1/vision/`：`main.py`（找色块+串口输出）、`detect.py`（阈值/算法）、`uart_link.py`（UART4 封装）、`app.yaml`。
 - 协议：`cx,cy,area\n`，丢失目标发 `-1,-1,0\n`；识别分辨率 320x240。
