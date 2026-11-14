@@ -317,3 +317,49 @@ void LCD_ShowString(uint16_t x, uint16_t y, const char *str, uint16_t fc, uint16
         }
     }
 }
+
+/* 作用：快速显示一行纯 ASCII。先把整行 8x16 点阵拼进 s_line_buf，
+ * 再按行 LCD_WriteDataBulk 批量发，避免逐像素写 SPI 的开销。 */
+void LCD_ShowStringFast(uint16_t x, uint16_t y, const char *str, uint16_t fc, uint16_t bc)
+{
+    const char *p = str;
+    uint16_t n, i, row, col, fg, bg;
+    uint8_t c, bits;
+
+    if ((str == NULL) || (x >= LCD_W) || (((uint32_t)y + LCD_ASCII_H) > LCD_H)) {
+        return;
+    }
+
+    /* 按屏幕剩余宽度截断 */
+    n = (uint16_t)((LCD_W - x) / LCD_ASCII_W);
+    for (i = 0U; (i < n) && (p[i] != '\0'); i++) {
+        /* 只统计长度 */
+    }
+    if (i == 0U) {
+        return;
+    }
+    n = i;
+
+    /* 批量发送要求高字节在前 */
+    fg = (uint16_t)((fc << 8) | (fc >> 8));
+    bg = (uint16_t)((bc << 8) | (bc >> 8));
+
+    lcd_set_window(x, y, (uint16_t)(x + n * LCD_ASCII_W - 1U),
+                   (uint16_t)(y + LCD_ASCII_H - 1U));
+
+    for (row = 0U; row < LCD_ASCII_H; row++) {
+        for (i = 0U; i < n; i++) {
+            c = (uint8_t)p[i];
+            if ((c < 0x20U) || (c > 0x7EU)) {
+                c = (uint8_t)' ';
+            }
+            bits = ascii_1608[c - 0x20U][row];
+            for (col = 0U; col < LCD_ASCII_W; col++) {
+                s_line_buf[i * LCD_ASCII_W + col] = (bits & 0x01U) ? fg : bg;
+                bits = (uint8_t)(bits >> 1);
+            }
+        }
+        LCD_WriteDataBulk((const uint8_t *)s_line_buf,
+                          (uint32_t)n * LCD_ASCII_W * 2U);
+    }
+}

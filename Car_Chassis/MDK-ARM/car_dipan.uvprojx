@@ -1056,6 +1056,11 @@
               <FileType>1</FileType>
               <FilePath>../BSP/bsp_motor.c</FilePath>
             </File>
+            <File>
+              <FileName>bsp_imu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../BSP/bsp_imu.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1080,6 +1085,11 @@
               <FileName>app_chassis.c</FileName>
               <FileType>1</FileType>
               <FilePath>../App/app_chassis.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_imu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../App/app_imu.c</FilePath>
             </File>
           </Files>
         </Group>

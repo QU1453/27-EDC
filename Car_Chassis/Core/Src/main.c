@@ -27,6 +27,7 @@
 /* USER CODE BEGIN Includes */
 #include "lcd.h"
 #include "app_chassis.h"
+#include "app_imu.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -107,6 +108,9 @@ int main(void)
   App_Chassis_Init();
   /* 最简运动示例：前进 0.2 m/s（改 0.0f 即停车，可用示波器/轮子验证方向） */
   App_Chassis_SetVelocity(0.2f, 0.0f);
+
+  /* 姿态传感器（YbImu）初始化：USART3 接收，姿态显示在板载 LCD */
+  App_IMU_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -117,6 +121,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     App_Chassis_Task();
+    App_IMU_Task();
   }
   /* USER CODE END 3 */
 }

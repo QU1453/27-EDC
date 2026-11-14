@@ -66,6 +66,7 @@ virtualFolder:
       files:
         - path: ../BSP/bsp_can.c
         - path: ../BSP/bsp_motor.c
+        - path: ../BSP/bsp_imu.c
       folders: []
     - name: Algorithm
       files:
@@ -75,6 +76,7 @@ virtualFolder:
     - name: App
       files:
         - path: ../App/app_chassis.c
+        - path: ../App/app_imu.c
       folders: []
 dependenceList: []
 outDir: build

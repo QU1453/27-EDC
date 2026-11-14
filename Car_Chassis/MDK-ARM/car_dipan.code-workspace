@@ -4,6 +4,9 @@
             "path": "."
         }
     ],
-    "settings": {},
+    "settings": {
+        "EIDE.ARM.ARMCC5.InstallDirectory": "D:\\keil5\\ARM\\ARMCC",
+        "EIDE.ARM.INI.Path": "D:\\keil5\\UV4\\UV4.exe"
+    },
     "extensions": {}
 }

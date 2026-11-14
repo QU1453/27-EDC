@@ -73,4 +73,9 @@ void LCD_ShowChinese(uint16_t x, uint16_t y, uint16_t code, uint16_t fc, uint16_
 /* 作用：显示字符串，支持 UTF-8 中英文混排（源码按 UTF-8 保存），超出宽度自动换行。 */
 void LCD_ShowString(uint16_t x, uint16_t y, const char *str, uint16_t fc, uint16_t bc);
 
+/* 作用：快速显示一行纯 ASCII 字符串（只支持 0x20~0x7E）。
+ *       整行点阵拼进缓冲后按行批量发送，比 LCD_ShowString 逐点写快约 10 倍，
+ *       适合周期性刷新的数值。不换行，超出右边界自动截断。 */
+void LCD_ShowStringFast(uint16_t x, uint16_t y, const char *str, uint16_t fc, uint16_t bc);
+
 #endif

@@ -1,5 +1,10 @@
 # 修改记录
 
+## 2026-11-13 本地分支整理（main 指向 1924cc5）
+- 本地 `main` 由 `19debbb` 快进到 `1924cc5`（等于 `origin/main`），HEAD 切到 `main`。
+- 因火绒拦截 git 进程写 `.git`，改为直接改写 `refs/heads/main`、`HEAD`、reflog；备份在 `%TEMP%\car-git-backup-20261113`。
+- 删除重复分支 `sync`（提交仍由 `main` 持有）；保留 `backup/local-20261113`（`8482ec1`）。
+
 ## 2026-11-13 合并本地 CubeMX 外设配置到 Car_Chassis
 - 来源：本地分支 `backup/local-20261113`（桌面 car 工程），已适配远端新目录 `Car_Chassis/`。
 - `Core/Inc`、`Core/Src`（fdcan / usart / gpio / stm32g4xx_it）：新增 FDCAN2、USART2、USART3、UART4、UART5 的初始化与中断。
