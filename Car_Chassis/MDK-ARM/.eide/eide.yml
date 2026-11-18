@@ -22,7 +22,10 @@ virtualFolder:
               files:
                 - path: ../Core/Src/main.c
                 - path: ../Core/Src/gpio.c
+                - path: ../Core/Src/dma.c
                 - path: ../Core/Src/fdcan.c
+                - path: ../Core/Src/i2c.c
+                - path: ../Core/Src/tim.c
                 - path: ../Core/Src/spi.c
                 - path: ../Core/Src/usart.c
                 - path: ../Core/Src/stm32g4xx_it.c
@@ -67,6 +70,7 @@ virtualFolder:
         - path: ../BSP/bsp_can.c
         - path: ../BSP/bsp_motor.c
         - path: ../BSP/bsp_imu.c
+        - path: ../BSP/bsp_dm_uart.c
       folders: []
     - name: Algorithm
       files:

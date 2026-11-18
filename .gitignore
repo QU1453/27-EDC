@@ -1,6 +1,0 @@
-# 本地缓存（pip/conda 等，勿提交）
-.cache/
-
-# Python
-__pycache__/
-*.pyc

@@ -18,7 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "dma.h"
 #include "fdcan.h"
+#include "i2c.h"
 #include "spi.h"
 #include "usart.h"
 #include "gpio.h"
@@ -28,6 +30,10 @@
 #include "lcd.h"
 #include "app_chassis.h"
 #include "app_imu.h"
+#include "bsp_dm_uart.h"
+
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,7 +65,43 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/* 作用：把达妙调试串口（USART3/UART4）收到的最近一行打到屏幕 224 行，
+ * 用来确认「线接对没有」。哪一路更新更近就显示哪一路 */
+static void dm_uart_show(void)
+{
+    static char     shown[48];
+    static uint32_t tick;
+    char    line[48];
+    char    text[48];
+    uint8_t port;
+    uint32_t t3;
+    uint32_t t4;
 
+    if ((HAL_GetTick() - tick) < 300U) {
+        return;
+    }
+    tick = HAL_GetTick();
+
+    t3 = BSP_DM_UART_LineTick(BSP_DM_UART_PORT_3);
+    t4 = BSP_DM_UART_LineTick(BSP_DM_UART_PORT_4);
+    if ((t3 == 0U) && (t4 == 0U)) {
+        return;
+    }
+    port = (t4 > t3) ? 4U : 3U;
+
+    if (BSP_DM_UART_GetLine((port == 3U) ? BSP_DM_UART_PORT_3 : BSP_DM_UART_PORT_4,
+                            line, sizeof(line)) == 0U) {
+        return;
+    }
+
+    (void)snprintf(text, sizeof(text), "U%u %s", (unsigned)port, line);
+    if (strcmp(text, shown) == 0) {
+        return;
+    }
+    (void)strncpy(shown, text, sizeof(shown) - 1U);
+    shown[sizeof(shown) - 1U] = '\0';
+    LCD_ShowStringFast(0U, 224U, text, WHITE, BLACK);
+}
 /* USER CODE END 0 */
 
 /**
@@ -91,6 +133,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART1_UART_Init();
   MX_SPI2_Init();
   MX_FDCAN1_Init();
@@ -99,18 +142,22 @@ int main(void)
   MX_UART5_Init();
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   /* 屏幕初始化（ST7789 2.00寸 320x240），并显示一行字 */
   LCD_Init();
   LCD_ShowString(128, 112, "我是G473-1", GREEN, BLACK);
 
-  /* 底盘初始化：CAN + 2×M2006/C610 + 速度环 */
+  /* 底盘初始化：FDCAN1 + 2×DM-S2325（MIT 定速） */
   App_Chassis_Init();
-  /* 最简运动示例：前进 0.2 m/s（改 0.0f 即停车，可用示波器/轮子验证方向） */
-  App_Chassis_SetVelocity(0.2f, 0.0f);
+  /* 开环试转：输出轴 10 rpm 正转，改 0.0f 即停；方向不对改 app_config.h 的 DIR */
+  App_Chassis_BenchSpin(10.0f);
 
   /* 姿态传感器（YbImu）初始化：USART3 接收，姿态显示在板载 LCD */
   App_IMU_Init();
+
+  /* 达妙 DM3520-1EC 调试串口：USART3(PB10/PB11) + UART4(PC10/PC11)，921600 8N1 */
+  BSP_DM_UART_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -122,6 +169,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
     App_Chassis_Task();
     App_IMU_Task();
+    dm_uart_show();
   }
   /* USER CODE END 3 */
 }

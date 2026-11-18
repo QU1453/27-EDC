@@ -20,6 +20,7 @@
  * ===================================================================== */
 
 #include "bsp_imu.h"
+#include "bsp_dm_uart.h"
 
 #include <string.h>
 
@@ -298,6 +299,11 @@ uint8_t BSP_IMU_RequestData(uint8_t func)
  * 保证 100 Hz 上报不丢帧。缓冲区满就丢弃新字节（等下一次上报） */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+    /* 达妙调试串口（USART3/UART4）先认领，不是它的才进 IMU 分支 */
+    if (BSP_DM_UART_OnRx(huart) != 0U) {
+        return;
+    }
+
     if (huart == s_uart) {
         uint16_t next = (uint16_t)((s_ring_head + 1U) & BSP_IMU_RING_MASK);
         if (next != s_ring_tail) {
@@ -312,6 +318,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 /* 作用：串口出错（溢出/噪声/帧错）后重新挂接收中断，否则会一直收不到数据 */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
+    if (BSP_DM_UART_OnError(huart) != 0U) {
+        return;
+    }
     if (huart == s_uart) {
         bsp_imu_arm_rx();
     }

@@ -4,6 +4,9 @@
 #include "bsp_can.h"
 #include "bsp_motor.h"
 #include "algo_kinematics.h"
+#include "lcd.h"
+
+#include <stdio.h>
 
 /* =====================================================================
  * app_chassis.c —— 底盘任务实现（App 层，整车控制）
@@ -56,6 +59,9 @@ static float    s_target_w;     /* 目标角速度 rad/s，逆时针为正 */
 static uint32_t s_last_tick;    /* 上一次控制解算的时刻，用于 5 ms 门控 */
 static uint32_t s_enable_tick;  /* 上一次重发使能帧的时刻，用于 500 ms 限流 */
 static uint8_t  s_ready;        /* 0 = 初始化没成功，Task 直接空转 */
+static uint8_t  s_bench;        /* 1 = 开环试转模式（忽略掉线保护，只为让轮子转起来） */
+static float    s_bench_rpm;    /* 试转模式下发的输出轴转速 rpm */
+static uint32_t s_lcd_tick;     /* 上次刷电机状态行的时间 */
 
 /**
  * 作用：上电初始化一次。建两个电机对象、建运动学参数、开 FDCAN、给两台电机发使能。
@@ -126,6 +132,36 @@ void App_Chassis_Stop(void)
 }
 
 /**
+ * 作用：开环试转，只用来首次验证「电机动不动」。rpm 是输出轴转速，0 = 退出试转。
+ * 说明：试转模式不看反馈、不做掉线清零（Master ID 没配也能转），
+ *       但方向反了要改 app_config.h 的 DIR，不要改这里。
+ */
+void App_Chassis_BenchSpin(float rpm)
+{
+  s_bench     = (rpm != 0.0f) ? 1U : 0U;
+  s_bench_rpm = rpm;
+}
+
+/* 作用：每 250 ms 在屏幕最后一行刷一次实测转速与状态码，不接调试器也能看通信是否正常。
+ * 格式：M 左rpm 右rpm E 左err 右err（err=1 已使能，0 未使能） */
+static void app_chassis_show_status(void)
+{
+  uint32_t now = HAL_GetTick();
+  char text[40];
+
+  if ((now - s_lcd_tick) < 250U)
+  {
+    return;
+  }
+  s_lcd_tick = now;
+
+  (void)snprintf(text, sizeof(text), "M %+6.1f %+6.1f  E%X%X",
+                 s_motor[0].rpm, s_motor[1].rpm,
+                 (unsigned)s_motor[0].err, (unsigned)s_motor[1].err);
+  LCD_ShowStringFast(0U, 208U, text, CYAN, BLACK);
+}
+
+/**
  * 作用：周期任务，放在 while(1) 里反复调用。收反馈 → 5 ms 门控 → 运动学 → 下发。
  * 内部自己做周期门控，调用频率高于 200 Hz 也没关系，多余调用会立刻返回。
  */
@@ -157,32 +193,52 @@ void App_Chassis_Task(void)
   }
   s_last_tick = now;
 
-  /* 3. 运动学：底盘速度 → 左右轮目标转速 rpm
-   *    v 取 + 是前进，w 取 + 是逆时针（左转）。
-   *    差速公式：左轮 = v/R - w*L/(2R)，右轮 = v/R + w*L/(2R)，再换算成 rpm。 */
-  Algo_Chassis_Inverse(&s_chassis, s_target_v, s_target_w, &rpm_left, &rpm_right);
-
-  /* 4. 乘方向系数：如果某个电机装反了（给正转速却往后走），只改 app_config.h 里的 DIR，
-   *    不要来这里改符号，也不要交换 CAN 线 */
-  BSP_Motor_SetSpeed(&s_motor[0], rpm_left  * APP_MOTOR_LEFT_DIR);
-  BSP_Motor_SetSpeed(&s_motor[1], rpm_right * APP_MOTOR_RIGHT_DIR);
-
-  /* 5. 掉线电机给 0 速度，并定期重发使能帧，避免上电顺序不对一直不动 */
-  for (i = 0U; i < APP_MOTOR_NUM; i++)
+  /* 试转模式：直接给两台电机同一个转速，不看反馈，也不做掉线清零 */
+  if (s_bench != 0U)
   {
-    if (BSP_Motor_IsOnline(&s_motor[i], APP_MOTOR_OFFLINE_MS) == 0U)
+    BSP_Motor_SetSpeed(&s_motor[0], s_bench_rpm * APP_MOTOR_LEFT_DIR);
+    BSP_Motor_SetSpeed(&s_motor[1], s_bench_rpm * APP_MOTOR_RIGHT_DIR);
+    if ((now - s_enable_tick) >= APP_ENABLE_RETRY_MS)
     {
-      BSP_Motor_SetSpeed(&s_motor[i], 0.0f);
-      if ((now - s_enable_tick) >= APP_ENABLE_RETRY_MS)
+      s_enable_tick = now;
+      for (i = 0U; i < APP_MOTOR_NUM; i++)
       {
-        s_enable_tick = now;
         (void)BSP_Motor_Enable(&s_motor[i], 1U);
+      }
+    }
+  }
+  else
+  {
+    /* 3. 运动学：底盘速度 → 左右轮目标转速 rpm
+     *    v 取 + 是前进，w 取 + 是逆时针（左转）。
+     *    差速公式：左轮 = v/R - w*L/(2R)，右轮 = v/R + w*L/(2R)，再换算成 rpm。 */
+    Algo_Chassis_Inverse(&s_chassis, s_target_v, s_target_w, &rpm_left, &rpm_right);
+
+    /* 4. 乘方向系数：如果某个电机装反了（给正转速却往后走），只改 app_config.h 里的 DIR，
+     *    不要来这里改符号，也不要交换 CAN 线 */
+    BSP_Motor_SetSpeed(&s_motor[0], rpm_left  * APP_MOTOR_LEFT_DIR);
+    BSP_Motor_SetSpeed(&s_motor[1], rpm_right * APP_MOTOR_RIGHT_DIR);
+
+    /* 5. 掉线电机给 0 速度，并定期重发使能帧，避免上电顺序不对一直不动 */
+    for (i = 0U; i < APP_MOTOR_NUM; i++)
+    {
+      if (BSP_Motor_IsOnline(&s_motor[i], APP_MOTOR_OFFLINE_MS) == 0U)
+      {
+        BSP_Motor_SetSpeed(&s_motor[i], 0.0f);
+        if ((now - s_enable_tick) >= APP_ENABLE_RETRY_MS)
+        {
+          s_enable_tick = now;
+          (void)BSP_Motor_Enable(&s_motor[i], 1U);
+        }
       }
     }
   }
 
   /* 6. 一机一帧下发：MIT 帧的 ID 就是电机 ID，两台 = 两帧，不能合并 */
   (void)BSP_Motor_Send(s_motor, APP_MOTOR_NUM);
+
+  /* 7. 屏幕状态行（250 ms 限流，内部自己判断） */
+  app_chassis_show_status();
 }
 
 /**

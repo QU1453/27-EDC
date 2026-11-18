@@ -15,10 +15,26 @@
  *   FIFO0      = 接收队列 0
  * ===================================================================== */
 
+/* 作用：把位时序改成 1 Mbps。
+ * CubeMX 生成的 fdcan.c 是 Prescaler=16 / Seg1=1 / Seg2=1，算出约 3.54 Mbps，
+ * 而 DM 电机出厂默认 1 Mbps，必然收不到。生成文件禁手改，所以在启动前用
+ * 同一份 Init 结构体重新初始化一次：PCLK1=170 MHz，170/10/(1+13+3) = 1 Mbps。 */
+static void bsp_can_fix_timing(void)
+{
+  hfdcan1.Init.NominalPrescaler     = 10U;
+  hfdcan1.Init.NominalSyncJumpWidth = 1U;
+  hfdcan1.Init.NominalTimeSeg1      = 13U;
+  hfdcan1.Init.NominalTimeSeg2      = 3U;
+  (void)HAL_FDCAN_Init(&hfdcan1);
+}
+
 /* 作用：配全局过滤 + （必要时）配过滤表 + 启动 FDCAN1 */
 uint8_t BSP_CAN_Init(void)
 {
   FDCAN_FilterTypeDef filter = {0};
+
+  /* 先把位时序改成 1 Mbps，再启动 */
+  bsp_can_fix_timing();
 
   /* 不匹配的帧全部进 FIFO0；远程帧一律拒收（DM 和 C610 都不用远程帧） */
   if (HAL_FDCAN_ConfigGlobalFilter(&hfdcan1,

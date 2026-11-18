@@ -32,6 +32,10 @@ void App_Chassis_SetVelocity(float v, float w);
 /* 作用：急停。目标清零并立即下发 0 转速，不等下一个控制周期 */
 void App_Chassis_Stop(void);
 
+/* 作用：开环试转（首次验证电机动不动）。rpm = 输出轴转速，0 表示退出试转。
+ * 试转时忽略反馈与掉线保护，两台电机直接按 rpm 转，方向由 app_config.h 的 DIR 决定 */
+void App_Chassis_BenchSpin(float rpm);
+
 /* 作用：读当前左右轮转子实测转速 rpm，调试/看波形用 */
 float App_Chassis_GetLeftRpm(void);
 float App_Chassis_GetRightRpm(void);
