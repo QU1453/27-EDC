@@ -1,209 +1,72 @@
-# car_dipan 修改记录（电赛小车底盘 / STM32G473VET6）
+# 修改记录（唯一）
 
-## 2026-10-18　屏幕驱动（Hardware 层）+ 显示“我是G473”
+## 2026-11-19 · Car_Chassis · ESP32 WiFi 桥（独立 Arduino 工程）
+- 新增 `ESP32_WIFI/`（不进 Keil/CubeMX 构建）：`ESP32_WIFI.ino`、`wifi_config.h`、`chassis_frame.cpp/h`、`chassis_link.cpp/h`、`wifi_link.cpp/h`。
+- 帧协议 `AA 55 | TYPE | LEN | PAYLOAD | SUM`，SUM=(TYPE+LEN+Σpayload)&0xFF；`0x01` CMD=float v+float w（8B），`0x81` TLM 由 STM32 定义。
+- UART1 → GPIO44(RX)/GPIO43(TX)，115200 8N1；20 ms 发一帧（50 Hz），500 ms 无指令归零。
+- WiFi 默认 AP：`Chassis_AP` / `88888888`，UDP 8888；上位机 8 字节小端 v/w。
+- 回滚：删除 `Car_Chassis/ESP32_WIFI/`
 
-**目的**：加入 ST7789 2.00 寸（320×240）屏驱动，上电显示一行字。驱动独立放 Hardware 层，不改 CubeMX 生成逻辑。
+## 2026-11-19 · 根目录 · Resources 资料库说明
+- 新增 `Resources/README.md`：说明该目录只放原始资料（开发板资料包、手册、原理图、示例），不参与编译；登记 `ESP32-S3 CAM开发板资料.zip`（135.8 MB）及其内容；约定新增资料补表。
+- 回滚：删除 `Resources/README.md`
 
-**新增文件**（`Hardware/`）
-| 文件 | 作用 |
-|---|---|
-| lcd_port.h / .c | 引脚 + SPI2 搬运层，直接用 CubeMX 的 `hspi2` |
-| lcd_font.h / .c | 8×16 ASCII（95 字，取自厂家例程）+ 16×16 汉字（我、是） |
-| lcd.h / .c | ST7789 初始化、清屏、画点/线/框、ASCII/汉字/UTF-8 字符串 |
+## 2026-11-13 · Car_Chassis · 姿态传感器 YbImu 串口驱动
+- 新增 `BSP/bsp_imu.c/.h`：逐字节中断接收 + 512B 环形缓冲 + `7E 23 len func data sum` 帧解析；接口 `BSP_IMU_Init/Task/GetData/IsOnline/SetReportRate/SetAlgoType/RequestData`。
+- 新增 `App/app_imu.c/.h`：每 250 ms 刷板载 ST7789（R/P/Y、GZ、在线状态、诊断行 `RX/F/P/B0/H`）；掉线时每 300 ms 交替请求 0x26 欧拉角 / 0x04 原始量。
+- 串口固定为 **USART1：PE0=TX / PE1=RX，115200 8N1**（`APP_IMU_UART=&huart1`）。CubeMX 生成文件一律未改，`main.c` 只在 USER CODE 区调用 `App_IMU_Init/Task`。
+- 其它文件：`MDK-ARM/car_dipan.uvprojx` 加入 BSP/App 源文件；`car_dipan.code-workspace` 增加 EIDE 指向本机 Keil AC5 的两行配置。
+- 诊断行改为 `RX/F/P/B0/H`（B0=首个字节、H=0x7E 个数），去掉无用的 E 跳变计数与 U 悬空检测。
+- 回滚：`git checkout BSP/bsp_imu.c BSP/bsp_imu.h App/app_imu.c App/app_imu.h Core/Src/main.c MDK-ARM/car_dipan.uvprojx`
 
-**接线（由板上走线决定：原理图 STM32G473VET6.pdf + 厂家例程 .ioc 一致）**
+## 2026-11-13 · 定位通信根因（接线未交叉）
+- 根因：传感器 TX 与 MCU RX **未交叉**。正确接法：传感器 TX→PE1、传感器 RX→PE0、共地。此前"无数据"是接线问题，驱动协议层无缺陷。
+- `App/app_imu.c`：删除 `app_imu_check_rx_pullup()`（运行时把 PE1 改成输入上拉读回，风险高）；诊断行去掉 `U` 字段。
+- 编译 Code=22988 RO=2448 RW=68 ZI=4036，0 Error 0 Warning，已烧录。
+- 回滚：`git checkout App/app_imu.c`
 
-| 信号 | 引脚 | 板上网络 | 说明 |
-|---|---|---|---|
-| RST | PA5 | EXT_SPI1_SCK | GPIO 输出，低复位 |
-| BLK | PA6 | EXT_SPI1_MISO | GPIO 输出，高点亮 |
-| CS | PA7 | EXT_SPI1_MOSI | GPIO 输出，常低 |
-| DC | PB14 | EXT_SPI2_MISO | GPIO 输出 |
-| SDA | PB15 | EXT_SPI2_MOSI | SPI2_MOSI（AF5） |
-| SCK | **PB13** | EXT_SPI2_SCK | SPI2_SCK（AF5） |
+## 2026-11-14 · 接线交叉后重写驱动（清理排查代码）
+- 接线：传感器 TX→PE1、RX→PE0、GND 共地、5V 外部供电（丝印确认模块为 YAHBOOM YB-MRA02-V1.0 / YbImu）。
+- `App/app_imu.c`：重写为干净版，屏上只留 R/P/Y、GZ、`IMU OK/NO DATA`、`F/RX` 计数；删除 `raw/P/B0/H/U` 等排查字段与 `s_rx_level` 引脚采样。
+- `BSP/bsp_imu.c/.h`：删除 `raw[8]`、`first_byte`、`head_count` 及中断里的 8 字节移位，缩短中断时间；协议解析/校验/请求帧逻辑未变。
+- 编译 Code=22656 RO=2408 RW=68 ZI=4020，0 Error 0 Warning；hex 已在工程根目录 `car_dipan.hex`，已烧录并复位。
+- 回滚：`git checkout App/app_imu.c App/app_imu.h BSP/bsp_imu.c BSP/bsp_imu.h`
 
-**接口形式（查证结论）**：屏上没有排针，只有一根 16 pin、0.5 mm 间距的 FFC 软排线，
-插到板上的 `FPC1 = FPC-05F-16PH20` 座子（座子 17/18 脚是屏蔽/接地脚，不算信号）。
-排线里走的就是：`SCK / SDA / DC / CS / RST / BLK / TE` + `VDD / GND / LEDK`，即 4 线单向 SPI。
-屏那一侧是 22 pin 的 `FPC2 = AFC07-S22ECA-00`，中间经转接板接到 16 pin 座子。
-所以引脚 100% 由 PCB 铜箔决定、不可自选，也不能接开发板排针。
+## 2026-11-16 · 电机首次点动（FDCAN 1 Mbps + 开环试转）
+- 根因：CubeMX 里 FDCAN1 位时序是 Prescaler=16/Seg1=1/Seg2=1，实算约 3.54 Mbps；DM-S2325 出厂 1 Mbps，故收发都不通。
+- `BSP/bsp_can.c`：新增 `bsp_can_fix_timing()`，在 `BSP_CAN_Init()` 启动前按 10/(1+13+3)=1 Mbps 重初始化（PCLK1=170 MHz）；**未改 CubeMX 生成的 `fdcan.c`**。
+- `App/app_chassis.c/.h`：新增 `App_Chassis_BenchSpin(rpm)` 开环试转，忽略反馈与掉线清零（Master ID 未配也能转）；屏幕 208 行显示 `M 左rpm 右rpm E左err右err`。
+- `Core/Src/main.c`（仅 USER CODE 2）：`App_Chassis_BenchSpin(10.0f)` 替代 `SetVelocity(0.2f,0)`。
+- 编译 Code=22960 RO=2448 RW=76 ZI=4020，0 Error 0 Warning；已烧录并复位。
+- 回滚：`git checkout BSP/bsp_can.c App/app_chassis.c App/app_chassis.h Core/Src/main.c`
 
-注：PB14 被当 DC 用，所以 SPI2 必须配成 Half-Duplex Master(1LINE)。
-为腾出 PB13，CAN 只保留 FDCAN1（PA11/PA12，单个总线带 2 个 C610 足够），删除 FDCAN2；PB12 变为空闲。
-（16 pin 排线的脚号 1→16 顺序在 PDF 里画了两列重复数字，无法唯一判读；但信号集合与 MCU 侧映射已由原理图网络名 + 厂家 .ioc 双向确认。）
+## 2026-11-17 · 达妙 DM3520-1EC 调试串口（USART3 + UART4）
+- 手册结论：驱动器 3Pin 串口是**调参口，921600 8N1**，只能读参数/改 ID/校准/升级；**跑电机必须走 CAN 1 Mbps**。
+- 新增 `BSP/bsp_dm_uart.c/.h`：在 BSP 层把 USART3/UART4 从 CubeMX 的 115200 重初始化为 921600 8N1（未改 `usart.c`），单字节中断收 → 256B 环形缓冲 + 80B 行缓存；接口 `Init/Available/Read/RxCount/GetLine/LineTick/Send/OnRx/OnError`。
+- 引脚：USART3 PB10=TX / PB11=RX；UART4 PC10=TX / PC11=RX。
+- `BSP/bsp_imu.c`：`HAL_UART_RxCpltCallback` / `HAL_UART_ErrorCallback` 开头先给 `BSP_DM_UART_OnRx/OnError` 认领，再走 IMU 分支（全局回调只能有一个）。
+- `Core/Src/main.c`（仅 USER CODE）：`BSP_DM_UART_Init()`；`dm_uart_show()` 每 300 ms 把最新一行打到屏幕 224 行 `U3/U4 <文本>`。
+- 编译 Code=24188 RO=2448 RW=960 ZI=4072，0 Error 0 Warning；本次未烧录（ST-Link 未检测到）。
+- 回滚：`git checkout BSP/bsp_imu.c Core/Src/main.c MDK-ARM/car_dipan.uvprojx` 并删除 `BSP/bsp_dm_uart.c/.h`
 
-**CubeMX 要配的东西**
-1. SPI2：Mode = Half-Duplex Master（1LINE），Hardware NSS = Disable（软件 NSS，CS 用 GPIO）
-2. 参数：Motorola / 8bit / MSB First / Prescaler 16 / CPOL High / CPHA 2 Edge（≈10.6MHz）/ TI Mode Disable / CRC Disable
-3. 引脚：PB13 → SPI2_SCK，PB15 → SPI2_MOSI（都设 Pull-up + High speed；SPI1 不启用，PA5/6/7 只作普通 GPIO）
-4. GPIO 输出：PA5、PA6、PA7、PB14（推挽、无上下拉、初始低），User Label 依次 `LCD_RST` `LCD_BLK` `LCD_CS` `LCD_DC`
-5. FDCAN2 取消勾选（释放 PB12/PB13）
-6. Generate Code（Keep User Code 已勾选，勿取消）
+## 2026-11-17 · CubeMX 重新 Generate Code（UART4/USART3 DMA + I2C1 + TIM1）
+- 在 CubeMX 里点了 GENERATE CODE（ioc 里已有 USART3/UART4 DMA 请求、I2C1、TIM1）。提示「Code is successfully generated ... but MDK-ARM V5.32 project generation has a problem」，但 `car_dipan.uvprojx` 实际已重写且 XML 合法。
+- 新增生成文件：`Core/Src/dma.c`、`i2c.c`、`tim.c` 及对应 `.h`；`usart.c` 现在带 USART3/UART4 的 DMA 句柄（DMA1 CH1~4）与 NVIC 使能。
+- 影响：DMA 通道已初始化但**未启动传输**，`HAL_UART_Receive_IT` 单字节中断收不受影响，`bsp_dm_uart` 无需改动；波特率仍是 115200，运行时由 `BSP_DM_UART_Init()` 改成 921600。
+- USER CODE 全部保留（`LCD_Init`/`App_Chassis_*`/`App_IMU_Init`/`BSP_DM_UART_Init`）；`uvprojx` 的自定义 Group 与 `bsp_dm_uart.c` 条目也保留。
+- 同步登记：`MDK-ARM/.eide/eide.yml` 补 `bsp_dm_uart.c`、`dma.c`、`i2c.c`、`tim.c`；`struct.md` 更新目录树。
+- 回滚：`git checkout Core MDK-ARM/car_dipan.uvprojx MDK-ARM/.eide/eide.yml car_dipan.ioc .mxproject`
 
-**生成结果核对（2026-10-18，CubeMX 6.17 / FW_G4 1.6.3）**
-- SPI2 全部参数与厂家例程一致：Master / 1LINE / 8bit / MSB / CPOL High / CPHA 2Edge / 分频 16 = 10.625 MBit/s，NSS 生成为 `SPI_NSS_SOFT`。
-- PA5/PA6/PA7/PB14 = GPIO_OUTPUT_PP（初始低），PB13/PB15 = AF5_SPI2，FDCAN2 已移除。
-- `Hardware` 分组与 `../Hardware` 头文件路径**重新生成后仍在**，无需重加。
-- Keil 编译 0 Error / 0 Warning，Code=9006 RO=2194 RW=16 ZI=2520。
-- 两点遗留（不影响先跑）：① PB13/PB15 生成成 `GPIO_NOPULL` + `SPEED_FREQ_LOW`，厂家例程是 PULLUP + HIGH，10.6MHz 下裕量偏小；② 四个 LCD 脚没打 User Label，`main.h` 无 `LCD_*_Pin` 宏，靠 `lcd_port.h` 的 `#ifndef` 兜底，数值一致。
-- **注意**：本次把 FDCAN1 也一起删了，当前工程没有任何 CAN。后面接 M2006/C610 前需重新勾 FDCAN1（PA11/PA12，与 LCD 引脚不冲突）。→ **已重新勾选**，生成了 `Core/Src/fdcan.c`、`Core/Inc/fdcan.h`。
-- **已修**：链接报 105 条 `L6406E`（可用存储区全为 0）。本工程有**两条互不相干的构建路径**，要分别填内存区：
-  - Keil uVision 走 `MDK-ARM/car_dipan.uvprojx`：`IROM=0x8000000/0x80000`、`IRAM=0x20000000/0x20000`、`OCR_RVCT4`=ROM 值、`OCR_RVCT9`=RAM 值、`Ir2Chk=0`（RVCT4/RVCT9 不能写反）。
-  - **EIDE 插件**（Trae 里点 Build 走这条）走 `MDK-ARM/.eide/eide.yml`，**完全不读 uvprojx**：其 `storageLayout` 的 IROM1/IRAM1 原是空串、还多勾了一个空 IROM2，于是生成的 `build/car_dipan/car_dipan.sct` 里全是 `0x0/0x0`。已填 `0x8000000/0x80000`、`0x20000000/0x20000`，IROM2 取消勾选。
-  - 两条路径均 0 Error / 0 Warning（Code=9006）。
-
-**代码改动**
-- 新增 `Hardware/lcd_port.*`、`lcd_font.*`、`lcd.*`
-- `Core/Src/main.c`：仅 USER CODE 段——Includes 加 `#include "lcd.h"`；BEGIN 2 加 `LCD_Init();` 与 `LCD_ShowString(128,112,"我是G473",GREEN,BLACK);`
-- `MDK-ARM/car_dipan.uvprojx`：新增 `Hardware` 分组；IncludePath 加 `../Hardware`
-
-**汉字取模**：SimSun 12pt 渲染 16×16，逐行 2 字节、高位在左（已目视校验字符画）。
-
-**已知限制 / 注意**
-- CubeMX 重新 Generate 会重写 `.uvprojx`：本次 `Hardware` 分组和 `../Hardware` 路径没丢，但 `IROM1/IRAM1` 被清成 0（见上方“已修”）。**每次 Generate 后都去 Options for Target → Target 页扫一眼存储区。**
-- EIDE 的内存区在 `.eide/eide.yml`，Generate 不会动它，但从 Keil 工程导入时会把空值带进来。**改完 eide.yml 要 `Developer: Reload Window` 让插件重读，否则它仍用内存里的旧值。**
-- 字库目前只有“我、是”两个汉字，追加汉字需同时改 `hz_code[]` 与 `hz_16x16[]`。
-
-**回滚**
-1. 删除 `Hardware/` 整个目录
-2. 删掉 `main.c` 中 USER CODE 两处新增
-3. `.uvprojx` 删 `Hardware` 分组 + IncludePath 去掉 `../Hardware`
-
----
-
-## 2026-10-18　上传 GitHub（QU1453/27-car-chassis）
-
-- 仓库：https://github.com/QU1453/27-car-chassis ，**公开**。简介写中文「27电赛小车底盘 / STM32G473VET6 + 2×M2006/C610 + ST7789」。
-  **GitHub 仓库名只允许 ASCII**（字母/数字/`-`/`_`/`.`），原名「27电赛小车地盘」建不出来，只能放简介。
-- 新增 `.gitignore`：排除 `MDK-ARM/build`、`MDK-ARM/car_dipan`（uVision 输出）、`MDK-ARM/.cmsis`（EIDE 包缓存）、`MDK-ARM/RTE`、`*.o/.d/.crf/.axf/.hex/.map` 等；入库 117 个源文件。
-- 本机执行 `git init -b main` → 首个提交 `16a453f` → 推送到 `origin/main` 并设 upstream。
-- 环境备注：本机**没有 `gh` CLI**；TRAE 的 GitHub 集成令牌只读（建仓报 403），建仓靠网页手动完成，推送用该令牌走 `http.extraHeader` 认证，令牌不落盘。
-
----
-
-## 2026-10-18　电机控制分层（BSP / App / Algorithm）+ M2006/C610 手册
-
-**目录结构（新增三层）**
-
-| 目录 | 职责 | 新增文件 |
-|---|---|---|
-| `BSP/` | 板级外设封装，不含业务 | `bsp_can.c/h`、`bsp_motor.c/h` |
-| `Algorithm/` | 纯算法，不依赖硬件 | `algo_pid.c/h`、`algo_kinematics.c/h`（已有 `algo_math.h`） |
-| `App/` | 任务与业务逻辑 | `app_config.h`、`app_chassis.c/h` |
-| `docs/` | 手册 | `M2006_C610_CAN手册.md` |
-
-**分工**：`App → BSP → Core/HAL`，`App → Algorithm`，Algorithm 不反向依赖。
-任务入口统一叫 `xxx_Task()`，在 `main.c` 的 `while(1)` 调用，节拍用 `HAL_GetTick()` 非阻塞实现。
-
-**功能**
-- `bsp_can`：全局过滤全收 + 远程帧拒收 + `HAL_FDCAN_Start`（CubeMX 只初始化，不做这两步）；轮询收发。
-  `StdFiltersNbr=0` 时自动跳过过滤表配置，靠全局过滤工作。
-- `bsp_motor`：0x200/0x1FF 按 ID 分槽大端打包；`0x201~0x208` 解析；多圈角度累加；在线检测。
-- `algo_pid`：位置式 PID，积分限幅 + 饱和停止积分。
-- `algo_kinematics`：两轮差速正/逆解，输入 m/s、rad/s，输出转子 rpm。
-- `app_chassis`：5 ms 速度环（200 Hz），掉线电机给 0 电流。
-- `main.c`：仅 USER CODE——Include 加 `app_chassis.h`；BEGIN 2 加 `App_Chassis_Init()` + 示例 `SetVelocity(0.2f, 0.0f)`；BEGIN 3 加 `App_Chassis_Task()`。
-
-**可调参数**：全在 `App/app_config.h`（电机 ID、方向 ±1、轮半径 0.075 m、轮距 0.30 m、PID、限流 3000）。
-轮半径/轮距是占位默认值，**需按实车实测修改**。
-
-**eide.yml 修正**
-- 补漏文件：`../Core/Src/fdcan.c`、`stm32g4xx_hal_fdcan.c`（原先缺失，EIDE 链接必失败）。
-- 新增 `BSP` / `Algorithm` / `App` 虚拟分组与 `../BSP`、`../Algorithm`、`../App` 头文件路径。
-- 改完需 `Developer: Reload Window`。
-
-**验证**：用 STM32CubeCLT 的 `arm-none-eabi-gcc -fsyntax-only -Wall` 编译全部新增 .c 与 `main.c`，0 error / 0 warning。EIDE 完整构建待插件内执行。
-
-**⚠ 未改但必须修（CubeMX 生成，禁手改）**
-`Core/Src/fdcan.c` 当前 `Prescaler=16 / TimeSeg1=1 / TimeSeg2=1`（≈3.54 Mbps，且 Seg2 寄存器值为非法下限），
-`StdFiltersNbr=0`、`AutoRetransmission=DISABLE`、PA11/PA12 `SPEED_FREQ_LOW`。
-需在 CubeMX GUI 改为 10 / 13 / 3 / SJW=1、`StdFiltersNbr=1`、`AutoRetransmission=ENABLE`、`VERY_HIGH`。
-
-**回滚**
-1. 删 `BSP/`、`App/`、`docs/`，删 `Algorithm/algo_pid.*`、`algo_kinematics.*`
-2. `main.c` 删 USER CODE 三处新增
-3. `eide.yml` 删新增分组/路径/两个漏文件条目
-
----
-
-## 2026-10-18　新增 README
-
-- 新建 `README.md`：背景、目的、硬件清单（主控/屏/电机/电调 + 引脚表）、CAN 报文速查、
-  分层说明、目录树、工具链、构建步骤、基础规则（禁改 CubeMX 生成文件等）、已知问题。
-- 同步重补 `eide.yml`（BSP/Algorithm/App 分组、两个 fdcan 源文件、三个头文件路径）：
-  **EIDE 重新导入 Keil 工程时会用 uvprojx 覆盖 eide.yml**，手加内容会丢，每次 Reload 后要检查。
-
----
-
-## 2026-10-24　底盘动力电机改型：新增 DM-S2325 手册
-
-- 动力电机由 M2006/C610 换成**达妙 DM-S2325-1EC + DM3520-1EC 驱动器**（额定 1.35 Nm / 峰值 5 Nm / 24 V）。
-- 新模式选用 **MIT 模式，Kp=0、Kd≠0（定速）**。
-- 新建 `docs/DM_S2325_CAN手册.md`：接线、ID 规划、反馈帧、MIT 8 字节位域打包、使能/失能/零点/清错、
-  与现有代码差异清单、坑。
-- **只写文档，未动任何代码**（`bsp_motor` / `app_config.h` / `algo_kinematics` 仍按 M2006 协议，待硬件到手再改）。
-- 新资料解压在 `../_dm_s2325/dm-s2325-1-ec-master/`（只读，未纳入工程）。
-- 待确认项：使能/失能/零点/清错的 4 个命令码（`FC/FD/FE/FB`）需用 USB2CAN 实测核对；`P_MAX/V_MAX/T_MAX` 需从电机读参数。
-- 新建 `struct.md`：分层依赖、目录树、各层放什么、4 条规矩。
-
-**回滚**：删 `docs/DM_S2325_CAN手册.md`、`struct.md` 即恢复。
+## 2026-11-17 · 编译验证（未改动工程设置）
+- 首次编译报 `L6047U: image 32840 bytes exceeds the maximum allowed for this version of the linker`（Keil MDK-Lite 32 KB 上限），因新增 i2c/tim/dma HAL 模块。
+- 曾试开 MicroLIB（`useUlib=1`）降到 Code=27240，**用户要求不改原工程，已改回 `useUlib=0`**，工程设置保持原样。
 
 
-
-## 2026-10-24 DM-S2325 驱动（最简版）
-- BSP/bsp_motor.c/h 重写：MIT 帧打包 p16/v12/Kp12/Kd12/t12，反馈解码 pos/vel/tor/温度/ERR，使能失能命令帧；API 改为 Init/SetSpeed/Send/Enable/SendCmd/Decode/IsOnline
-- App/app_config.h：新增左右 Master ID(0x11/0x12)；APP_GEAR_RATIO 36→1（DM 量纲已在输出轴）
-- App/app_chassis.c/h：去掉外层 PID（DM 内部 Kd 已是速度环），直接下发目标转速；掉线时重发使能
-- 回滚：git checkout BSP/bsp_motor.c BSP/bsp_motor.h App/app_chassis.c App/app_chassis.h App/app_config.h
-
-## 2026-10-24 eide.yml 第三次被覆写，补回
-- 现象：EIDE 树里没有 BSP/Algorithm/App 三组，bsp_motor.c 不参与编译
-- 原因：点「重新导入 Keil 工程」→ 按 car_dipan.uvprojx 重写 eide.yml
-- 改：补回 Algorithm(algo_kinematics/algo_pid)、BSP(bsp_can/bsp_motor)、App(app_chassis) 三组；incList 补 ../App ../BSP ../Algorithm
-
-## 2026-10-24 EIDE 分组丢失根治（改 uvprojx + yml，经用户授权）
-- `MDK-ARM/car_dipan.uvprojx`：`<Groups>` 末尾加 BSP / Algorithm / App 三个 `<Group>`（5 个 .c）；唯一那处 `<IncludePath>` 前置补 `../App;../BSP;../Algorithm`。只加分组和头文件路径，编译选项一律未动；XML 校验通过（共 8 组）
-- `MDK-ARM/.eide/eide.yml`：virtualFolder 加同样三组；incList 加 ../App ../BSP ../Algorithm
-- `BSP/bsp_motor.c`、`App/app_chassis.c`：补注释（文件头数据流、MIT 8 字节位域图、反馈帧逐字节布局、各静态变量含义、5 步流程编号）
-- 新建 `IMPORTANT_FIXES.md`（重要问题修复记录）
-- 5 个 .c 过 `arm-none-eabi-gcc -fsyntax-only -Wall -Wextra` 全 OK
-- 回滚：git checkout MDK-ARM/car_dipan.uvprojx MDK-ARM/.eide/eide.yml BSP/bsp_motor.c App/app_chassis.c
-
-## 2026-10-24 Algorithm 层补注释（只加注释，逻辑未改）
-- algo_math.h：header-only/static inline 的理由、为什么用 float 不用 double；Signf(0)=0、Deadband 是平移、Map 不夹紧、LowPass 的 alpha、WrapPi 用 while 不用 fmodf
-- algo_kinematics.h/c：坐标系约定(+x 车头/+y 左/v 前进为正/w 逆时针为正)、gear_ratio 必须填 1.0f 的理由、逆解 4 步推导 + k=60·gear_ratio/(2πR) 算例、正解除整轮距
-- algo_pid.h/c：位置式 vs 增量式、dt 必须真实且固定、anti-windup 只在误差与饱和同向时回滚积分、dt=0 会出 nan 并沿状态传播
-- 验证：algo_kinematics.c / algo_pid.c 过 `arm-none-eabi-gcc -fsyntax-only -Wall -Wextra` 无告警
-- 回滚：git checkout Algorithm/
-
-## 2026-10-24 注释规范化（文件作用 + 命名对照 + 函数作用）
-- 范围：Algorithm 5 个、BSP 4 个、App 3 个、Hardware 6 个，共 18 个自有源文件
-- 每个文件头补两段：「文件作用」（一两句说清干什么、给谁用）、「命名对照」（英文标识符 = 中文含义）
-- 每个函数开头统一 `/* 作用：... */`，含参数/返回值要点；static 辅助函数同样标注
-- Hardware 额外保留端口引脚表与取模规则；lcd_font.c 只有数据，加了取模规则说明
-- 只加注释，代码逻辑、宏值、函数签名一字未改
-- 验证：8 个 .c 过 `arm-none-eabi-gcc -fsyntax-only -Wall -Wextra` 零告警（ALL-SYNTAX-OK）
-- 回滚：git checkout Algorithm/ BSP/ App/ Hardware/
-
-## 2026-10-24 MIT 帧交互演示页
-- 新增 docs/mit_frame_demo.html（单文件、零依赖、双击即开）
-- 四幕：量化 → 64 位拼位 → 8 字节打包 → 一问一答 + 反馈解码；量程/打包顺序照抄 bsp_motor.h/.c
-- 回滚：删除 docs/mit_frame_demo.html
-
-## 2026-11-03 新增 .vscode/tasks.json
-- 原因：工程为 Keil MDK，STM32 插件无法直接烧录。
-- 内容：新增「编译 / 烧录 / 编译并烧录」三个任务，默认生成任务为「编译并烧录」（Ctrl+Shift+B）。
-
-## 2026-11-03 main.c 中文串编译报错
-- 现象：AC5 报 main.c(99) missing closing quote / too few arguments，无法生成 hex。
-- 原因：源码 UTF-8，armcc 按 GBK 解析中文字符串，吞掉引号。
-- 改法：显示串改为 UTF-8 字节转义字面量（\xE6...），纯 ASCII 源码，LCD 侧仍按 UTF-8 解码。
-
-## 2026-11-07 重新绑定 GitHub 并推送当前版本
-- 原因：工程目录迁移，本地 main 与远端分叉（远端多一条引脚配置提交）。
-- 改法：HEAD 对齐 origin/main 后提交当前工作区全部内容并推送；.gitignore 补 build.log / flash_build.log；仓库描述改为「电赛小车地盘」。
-
-## 2026-11-08 修复合并提交里的冲突标记
-- 现象：合并提交 b57fa15 把 `<<<<<<< / ======= / >>>>>>>` 标记一起提交进 `Hardware/lcd_font.c`，Keil 编译报语法错误。
-- 改动：删除标记，保留点阵数据；清掉 `///////111111111` 垃圾注释。其余文件无标记。
-- 回滚：`git revert <本次提交>`
+## 2026-11-17 CubeMX 工程名统一为 Car_Chassis
+- car_dipan.ioc -> Car_Chassis.ioc（ProjectFileName/ProjectName 同步）
+- MDK-ARM/car_dipan.uvprojx -> Car_Chassis.uvprojx（TargetName/OutputDirectory/OutputName/ListingPath 同步）
+- car_dipan.code-workspace -> Car_Chassis.code-workspace；输出目录 MDK-ARM/car_dipan/ -> MDK-ARM/Car_Chassis/
+- 清理 uvprojx 中残留的 3 个 <File>：../Core/Src/dma.c、i2c.c、	im.c（文件已删，会报 cannot open source input file）
+- .mxproject 全为相对路径无需改；.eide/eide.yml 内部 target 名保持不动
+- 回滚：git checkout -- Car_Chassis 后删除新增的 Car_Chassis.* 文件
+- 修复 Generate Code 报错 `FileNotFoundException: Car_Chassis.uvoptx`：从 git HEAD 取回 car_dipan.uvoptx / car_dipan.uvguix.47402，字节级替换 car_dipan->Car_Chassis 后生成同名文件（Keil 改名必须 uvprojx/uvoptx/uvguix 三件套一起改）
