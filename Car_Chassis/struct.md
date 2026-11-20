@@ -10,7 +10,7 @@
 Car_Chassis/
 ├── App/                      应用层（业务编排）
 │   ├── app_chassis.c/h       底盘任务：v/ω → 左右轮转速 → 下发（含使能重发）
-│   ├── app_imu.c/h           YbImu 姿态任务：解析帧、LCD 显示
+│   ├── app_imu.c/h           YbImu 姿态任务：I2C 轮询、LCD 显示
 │   └── app_config.h          全部可调参数集中地（ID/Master ID/轮径/轮距/周期）
 ├── Algorithm/                算法层（禁止出现任何 HAL_xxx）
 │   ├── algo_math.h           数学工具，纯 inline（限幅、映射、角度归一、快开方）
@@ -18,16 +18,17 @@ Car_Chassis/
 │   └── algo_kinematics.c/h   差速运动学：v/ω ↔ 左右轮线速度
 ├── BSP/                      板级驱动层（会用 HAL，但不碰 CubeMX 文件）
 │   ├── bsp_can.c/h           FDCAN1 收发封装：启动、过滤器、发帧、收帧回调
-│   ├── bsp_imu.c/h           YbImu 串口驱动（USART1，单字节中断收）
+│   ├── bsp_imu.c/h           YbImu I2C 驱动（I2C1 PB7=SDA/PA15=SCL，地址 0x23，10 ms 轮询）
 │   ├── bsp_dm_uart.c/h       达妙调试串口（USART3 PB10/PB11、UART4 PC10/PC11，921600 8N1）
+│   │                         ⚠ 工程唯一的 HAL_UART_RxCpltCallback/ErrorCallback 在这里
 │   └── bsp_motor.c/h         DM-S2325 驱动：MIT 组帧、反馈解码、使能/失能
 ├── Hardware/                 芯片外设驱动（只依赖 HAL + 引脚宏）
 │   ├── lcd.c/h               ST7789 屏驱动（绘图 API）
 │   ├── lcd_font.c/h          字库
 │   └── lcd_port.c/h          SPI/GPIO 底层时序与引脚映射
 ├── Core/                     ⚠ CubeMX 生成，禁手改
-│   ├── Inc/  fdcan.h gpio.h main.h spi.h usart.h stm32g4xx_hal_conf.h stm32g4xx_it.h
-│   └── Src/  fdcan.c gpio.c main.c spi.c usart.c stm32g4xx_hal_msp.c stm32g4xx_it.c system_stm32g4xx.c
+│   ├── Inc/  fdcan.h gpio.h i2c.h main.h spi.h usart.h stm32g4xx_hal_conf.h stm32g4xx_it.h
+│   └── Src/  fdcan.c gpio.c i2c.c main.c spi.c usart.c stm32g4xx_hal_msp.c stm32g4xx_it.c system_stm32g4xx.c
 ├── Drivers/                  ⚠ ST HAL 库 + CMSIS，禁改
 ├── .vscode/tasks.json        编译/烧录任务（Ctrl+Shift+B = 编译并烧录）
 ├── MDK-ARM/                  Keil 工程（Car_Chassis.uvprojx）+ .eide/eide.yml（EIDE 项目树靠它）

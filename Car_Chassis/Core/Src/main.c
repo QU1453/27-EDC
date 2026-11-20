@@ -153,7 +153,7 @@ int main(void)
   /* 开环试转：输出轴 10 rpm 正转，改 0.0f 即停；方向不对改 app_config.h 的 DIR */
   App_Chassis_BenchSpin(10.0f);
 
-  /* 姿态传感器（YbImu）初始化：USART3 接收，姿态显示在板载 LCD */
+  /* 姿态传感器（YbImu）初始化：I2C1（PB7=SDA/PA15=SCL）轮询，姿态显示在板载 LCD */
   App_IMU_Init();
 
   /* 达妙 DM3520-1EC 调试串口：USART3(PB10/PB11) + UART4(PC10/PC11)，921600 8N1 */

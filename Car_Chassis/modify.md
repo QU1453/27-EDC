@@ -59,3 +59,20 @@
 - .mxproject 全为相对路径无需改；.eide/eide.yml 内部 target 名保持不动
 - 回滚：git checkout -- Car_Chassis 后删除新增的 Car_Chassis.* 文件
 - 修复 Generate Code 报错 `FileNotFoundException: Car_Chassis.uvoptx`：从 git HEAD 取回 car_dipan.uvoptx / car_dipan.uvguix.47402，字节级替换 car_dipan->Car_Chassis 后生成同名文件（Keil 改名必须 uvprojx/uvoptx/uvguix 三件套一起改）
+
+## 2026-11-20 姿态传感器改 I2C
+- bsp_imu.c/h 重写为 I2C1 驱动（地址 0x23，PB7=SDA/PB8=SCL）：10 ms 轮询 6 组寄存器（欧拉角/加速度/角速度/磁场/四元数/气压），新增 SetAlgoType、CalibrateIMU、CalibrateMag，删除 UART 帧解析与请求。
+- app_imu.c 改为读 I2C1 数据，去掉主动请求，屏显 F/ERR；app_imu.h、main.c 注释同步。
+- HAL_UART_RxCpltCallback/ErrorCallback 从 bsp_imu.c 移到 bsp_dm_uart.c（工程唯一实现，达妙串口依赖）。
+- 未编译。
+- uvprojx 里 stm32g4xx_hal_tim.c / tim_ex.c 残留（ioc 未启用 TIM，文件不存在）导致编译失败，已把两条 IncludeInBuild 改为 0。
+- Keil 编译通过（Code 26884 B / RO 2444 / RW 952 / ZI 4184，0 warning），已用 UV4 -f 烧录并 Verify OK。
+
+## 2026-11-20 SCL 由 PB8 改 PA15
+- 原因：PB8=BOOT0，传感器 SCL 上拉使上电进 ROM Bootloader，程序不跑、屏不亮。
+- CubeMX 改 I2C1_SCL=PA15（AF4），SDA 仍 PB7；重新生成代码。
+- Keil 编译 0 Error，UV4 -f 烧录 Verify OK，屏幕点亮。
+- 同步注释：app_imu.c/h、bsp_imu.c/h、main.c、struct.md（PB8→PA15）。
+- 待查：屏幕 ERR 持续增长、F 不涨（I2C 未读通），疑速率 460 kHz 过快或接线。
+- I2C1 由 Fast 460 kHz 改 Standard 100 kHz：ioc 与 i2c.c 同步（Timing 0x40621236 → 0xF0313434：PRESC=15/SCLDEL=3/SDADEL=1/SCLH=SCLL=52）。编译 0 Error，烧录 Verify OK。
+- 验证通过：屏幕显示 IMU OK，F 正常递增、ERR 为 0，姿态数据（R/P/Y/GZ）正常刷新。

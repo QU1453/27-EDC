@@ -196,3 +196,17 @@ uint8_t BSP_DM_UART_OnError(UART_HandleTypeDef *huart)
     dm_arm(p);
     return 1U;
 }
+
+/* 说明：姿态传感器改用 I2C 后不再占用串口，工程里唯一的 UART 全局回调
+ * 就放在这里。收到的 1 字节交给对应端口的环形缓冲，并重新挂中断；
+ * 不是本模块的串口（USART1/USART2/UART5）直接忽略。 */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    (void)BSP_DM_UART_OnRx(huart);
+}
+
+/* 作用：串口出错（溢出/噪声/帧错）后重新挂接收中断 */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    (void)BSP_DM_UART_OnError(huart);
+}
